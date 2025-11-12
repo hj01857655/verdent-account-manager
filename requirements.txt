@@ -1,0 +1,2 @@
+pywin32>=306
+cryptography>=3.4.8
