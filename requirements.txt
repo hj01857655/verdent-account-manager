@@ -1,2 +1,2 @@
-pywin32>=306
-cryptography>=3.4.8
+DrissionPage>=4.0.0
+requests>=2.31.0

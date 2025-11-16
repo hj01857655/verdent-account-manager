@@ -21,9 +21,9 @@
 
 从 [Releases](https://github.com/chaogei/Verdent/releases) 下载最新版本：
 
-- **Windows**: `Verdent账号管理器_1.0.0_x64.msi`
-- **macOS**: `Verdent账号管理器_1.0.0.dmg`
-- **Linux**: `Verdent账号管理器_1.0.0_amd64.AppImage`
+- **Windows**: `Verdent账号管理器_1.2.0_x64.msi`
+- **macOS**: `Verdent账号管理器_1.2.0.dmg`
+- **Linux**: `Verdent账号管理器_1.2.0_amd64.AppImage`
 
 ### 基本使用
 
@@ -94,8 +94,8 @@ npm run tauri build
 ### 跨平台构建（GitHub Actions）
 ```bash
 # 创建标签触发自动构建
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 ## 📁 项目结构

@@ -67,9 +67,9 @@
 1. **下载安装包**
    - 访问 [Releases](https://github.com/chaogei/Verdent/releases) 页面
    - 下载对应平台的安装包：
-     - Windows: `Verdent账号管理器_1.0.0_x64.msi` 或 `.exe`
-     - macOS: `Verdent账号管理器_1.0.0.dmg`
-     - Linux: `Verdent账号管理器_1.0.0_amd64.deb` 或 `.AppImage`
+     - Windows: `Verdent账号管理器_1.2.0_x64.msi` 或 `.exe`
+     - macOS: `Verdent账号管理器_1.2.0.dmg`
+     - Linux: `Verdent账号管理器_1.2.0_amd64.deb` 或 `.AppImage`
 
 2. **安装应用**
    - Windows: 双击安装包，按提示安装
@@ -77,11 +77,11 @@
    - Linux: 
      ```bash
      # Debian/Ubuntu (.deb)
-     sudo dpkg -i Verdent账号管理器_1.0.0_amd64.deb
+     sudo dpkg -i Verdent账号管理器_1.2.0_amd64.deb
      
      # AppImage
-     chmod +x Verdent账号管理器_1.0.0.AppImage
-     ./Verdent账号管理器_1.0.0.AppImage
+     chmod +x Verdent账号管理器_1.2.0.AppImage
+     ./Verdent账号管理器_1.2.0.AppImage
      ```
 
 3. **启动应用**
@@ -310,8 +310,8 @@ npm run tauri build
 
 2. **触发构建**
    ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v1.2.0
+   git push origin v1.2.0
    ```
 
 3. **下载构建产物**

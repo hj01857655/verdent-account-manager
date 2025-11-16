@@ -1,6 +1,6 @@
 [package]
 name = "verdent-account-manager"
-version = "1.0.0"
+version = "1.2.0"
 description = "Verdent AI 账号管理器 - 跨平台桌面应用"
 authors = ["Verdent Team"]
 edition = "2021"
