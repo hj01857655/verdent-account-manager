@@ -1,0 +1,36 @@
+[package]
+name = "verdent-account-manager"
+version = "1.0.0"
+description = "Verdent AI 账号管理器 - 跨平台桌面应用"
+authors = ["Verdent Team"]
+edition = "2021"
+
+[lib]
+name = "verdent_account_manager_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["rustls-tls"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "cookies", "rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["full"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+hex = "0.4"
+thiserror = "1"
+dirs = "5"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

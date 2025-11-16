@@ -1,0 +1,50 @@
+Verdent AI 账户管理器 - 打包说明
+=====================================
+
+## 重要提示
+
+在 PowerShell 中运行 .bat 文件会出现编码问题!
+
+请使用以下方式之一:
+
+### 方式 1: 使用 PowerShell 脚本 (推荐)
+
+在 PowerShell 中运行:
+
+    .\build_python.ps1    # 打包 Python 脚本
+    .\build_tauri.ps1     # 打包 Tauri 应用
+    .\build_all.ps1       # 一键打包所有
+
+### 方式 2: 使用 CMD 运行 .bat 文件
+
+1. 打开 CMD (命令提示符),不是 PowerShell
+2. 运行:
+    build_python.bat
+    build_tauri.bat
+    build_all.bat
+
+### 方式 3: 在 PowerShell 中运行 .bat 文件
+
+    cmd /c build_python.bat
+    cmd /c build_tauri.bat
+    cmd /c build_all.bat
+
+## 推荐流程
+
+1. 打开 PowerShell
+2. 运行: .\build_all.ps1
+3. 等待打包完成
+
+## 如果遇到执行策略错误
+
+PowerShell 可能会提示无法运行脚本,执行以下命令:
+
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+然后重新运行打包脚本。
+
+## 输出文件
+
+- Python exe: dist\verdent_auto_register.exe
+- Tauri 安装包: Verdent_account_manger\src-tauri\target\release\bundle\
+
