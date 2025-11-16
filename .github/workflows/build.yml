@@ -78,16 +78,14 @@ jobs:
           rustup target add aarch64-apple-darwin
           rustup target add x86_64-apple-darwin
 
-      # Windows 平台：打包 Python 脚本
-      - name: 设置 Python 环境 (Windows)
-        if: matrix.platform == 'windows-latest'
+      # 所有平台：打包 Python 脚本
+      - name: 设置 Python 环境
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: 安装 Python 依赖 (Windows)
-        if: matrix.platform == 'windows-latest'
+      - name: 安装 Python 依赖
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
@@ -160,13 +158,18 @@ jobs:
           Copy-Item "dist\verdent_auto_register.exe" "Verdent_account_manger\resources\verdent_auto_register.exe" -Force
           Write-Output "Copied to resources directory"
 
-      # 非 Windows 平台：创建占位文件
+      # macOS 和 Linux：创建占位文件
       - name: 创建资源占位文件 (非 Windows)
         if: matrix.platform != 'windows-latest'
         run: |
           mkdir -p Verdent_account_manger/resources
-          touch Verdent_account_manger/resources/verdent_auto_register.exe
-          echo "Placeholder for non-Windows platforms" > Verdent_account_manger/resources/verdent_auto_register.exe
+          echo '#!/bin/sh' > Verdent_account_manger/resources/verdent_auto_register
+          echo 'echo "Python auto-register script is only available on Windows platform"' >> Verdent_account_manger/resources/verdent_auto_register
+          echo 'echo "Please use Windows version or run the Python script directly:"' >> Verdent_account_manger/resources/verdent_auto_register
+          echo 'echo "python3 verdent_auto_register.py"' >> Verdent_account_manger/resources/verdent_auto_register
+          chmod +x Verdent_account_manger/resources/verdent_auto_register
+          # 为 Tauri 兼容性创建 .exe 文件
+          cp Verdent_account_manger/resources/verdent_auto_register Verdent_account_manger/resources/verdent_auto_register.exe
 
       - name: 安装前端依赖
         working-directory: Verdent_account_manger
@@ -235,6 +238,29 @@ jobs:
       - name: 显示产物结构
         run: ls -R artifacts
 
+      - name: 整理发布文件
+        run: |
+          # 创建发布目录
+          mkdir -p release_files
+          
+          # 复制 Windows 安装包
+          # MSI 文件
+          find artifacts -name "*.msi" -type f -exec cp {} release_files/ \;
+          # NSIS 安装程序（带 -setup 后缀的 exe）
+          find artifacts -name "*-setup.exe" -type f -exec cp {} release_files/ \;
+          
+          # 复制 macOS 安装包
+          find artifacts -name "*.dmg" -type f -exec cp {} release_files/ \;
+          
+          # 复制 Linux 安装包
+          find artifacts -name "*.deb" -type f -exec cp {} release_files/ \;
+          find artifacts -name "*.AppImage" -type f -exec cp {} release_files/ \;
+          
+          # 显示最终文件列表
+          echo "=== Release files ==="
+          ls -la release_files/
+          echo "====================="
+      
       - name: 创建 Release
         uses: softprops/action-gh-release@v1
         with:
@@ -242,11 +268,7 @@ jobs:
           generate_release_notes: true
           tag_name: "${{ github.ref_type == 'tag' && github.ref_name || format('manual-{0}', github.run_number) }}"
           name: "${{ github.ref_type == 'tag' && github.ref_name || format('Manual Build #{0}', github.run_number) }}"
-          files: |
-            artifacts/**/*.msi
-            artifacts/**/*.exe
-            artifacts/**/*.dmg
-            artifacts/**/*.deb
-            artifacts/**/*.AppImage
+          files: release_files/*
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

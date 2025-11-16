@@ -20,6 +20,7 @@
 - 修复图标文件名使用了错误字符 `×` 而非 `x` 的问题
 - 修复 Ubuntu 22.04 上 libappindicator 依赖冲突
 - 修复 Rust 编译警告
+- 修复 GitHub Release 上传重复文件的问题
 
 ### 📄 文档
 - 完善项目 README 和使用文档
