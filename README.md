@@ -402,7 +402,7 @@ sudo dnf install webkit2gtk4.1 gtk3
 
 - 项目主页: [https://github.com/chaogei/Verdent](https://github.com/chaogei/Verdent)
 - Issues: [https://github.com/chaogei/Verdent/issues](https://github.com/chaogei/Verdent/issues)
-- Email: your-email@example.com
+- Email: chaogei666@gmail.com
 
 ---
 
