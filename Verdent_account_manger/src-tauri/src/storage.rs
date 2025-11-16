@@ -31,6 +31,7 @@ impl StorageManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn load(&self, key: &str) -> Result<Option<serde_json::Value>, std::io::Error> {
         let file_path = self.storage_dir.join(format!("{}.json", key));
         
@@ -73,6 +74,7 @@ impl StorageManager {
         Ok(keys)
     }
 
+    #[allow(dead_code)]
     pub fn reset_device_identity(&self) -> Result<HashMap<String, bool>, std::io::Error> {
         let identity_keys = vec![
             "secrets_ycAuthToken",
@@ -95,6 +97,7 @@ impl StorageManager {
         Ok(results)
     }
 
+    #[allow(dead_code)]
     pub fn reset_all_storage(&self) -> Result<HashMap<String, bool>, std::io::Error> {
         let all_keys = vec![
             "secrets_ycAuthToken",
@@ -119,6 +122,7 @@ impl StorageManager {
         Ok(results)
     }
 
+    #[allow(dead_code)]
     pub fn get_storage_path(&self) -> String {
         self.storage_dir.to_string_lossy().to_string()
     }

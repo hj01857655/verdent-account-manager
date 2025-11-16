@@ -144,6 +144,7 @@ impl VSCodeStorageManager {
         hex::encode(hash)
     }
 
+    #[allow(dead_code)]
     pub fn reset_telemetry_ids(&self) -> Result<(String, String, String), std::io::Error> {
         let mut storage = self.read_storage()?;
 
@@ -191,6 +192,7 @@ impl VSCodeStorageManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_all_ids(&self) -> Result<Vec<String>, std::io::Error> {
         let (sqm_id, device_id, machine_id) = self.get_current_ids()?;
         let mut ids = Vec::new();
