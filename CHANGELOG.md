@@ -5,6 +5,29 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且该项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2024-11-17
+
+### ✨ 新功能
+- **集成自动注册工具** - 将 Python 自动注册脚本打包进安装包
+- **GitHub Actions 增强** - 支持在 CI/CD 中自动打包 Python 脚本
+
+### 🔧 改进
+- **构建流程优化** - 动态生成 PyInstaller spec 文件
+- **跨平台支持** - 非 Windows 平台使用占位文件
+- **依赖管理** - 修复 Linux 构建依赖冲突问题
+
+### 🐛 修复
+- 修复图标文件名使用了错误字符 `×` 而非 `x` 的问题
+- 修复 Ubuntu 22.04 上 libappindicator 依赖冲突
+- 修复 Rust 编译警告
+
+### 📄 文档
+- 完善项目 README 和使用文档
+- 添加快速入门指南
+- 添加部署检查清单
+
+---
+
 ## [Unreleased]
 
 ### 计划中

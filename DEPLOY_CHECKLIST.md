@@ -53,8 +53,8 @@ git push origin main
 ### 步骤 3: 创建发布标签
 ```bash
 # 创建版本标签
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin v1.0.0
+git tag -a v1.2.0 -m "Release version 1.2.0"
+git push origin v1.2.0
 ```
 
 ### 步骤 4: 监控 CI/CD
@@ -138,7 +138,7 @@ npm run tauri build
 ## 📝 发布说明模板
 
 ```markdown
-# 🎉 Verdent v1.0.0 发布
+# 🎉 Verdent v1.2.0 发布
 
 ## ✨ 新功能
 - 功能1描述
