@@ -6,7 +6,8 @@ export default defineConfig({
   clearScreen: false,
   server: {
     port: 5173,
-    strictPort: true,
+    strictPort: false,  // 如果端口被占用，自动尝试下一个可用端口
+    host: 'localhost',
   },
   envPrefix: ['VITE_', 'TAURI_'],
   build: {

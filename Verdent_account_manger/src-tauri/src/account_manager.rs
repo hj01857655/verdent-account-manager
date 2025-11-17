@@ -1,5 +1,3 @@
-use serde::{Deserialize, Deserializer};
-use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use chrono::prelude::*;
@@ -10,20 +8,6 @@ use std::sync::Mutex;
 
 use crate::errors::AccountError;
 use crate::models::{Account, AccountList};
-
-// 自定义反序列化函数,支持将整数或字符串转换为 Option<String>
-fn deserialize_quota<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value: Option<Value> = Option::deserialize(deserializer)?;
-    match value {
-        None => Ok(None),
-        Some(Value::String(s)) => Ok(Some(s)),
-        Some(Value::Number(n)) => Ok(Some(n.to_string())),
-        Some(_) => Ok(None),
-    }
-}
 
 pub struct AccountManager {
     storage_path: PathBuf,

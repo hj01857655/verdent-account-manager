@@ -10,19 +10,19 @@ mod errors;
 mod models;
 
 use commands::*;
-use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
-            // 禁用开发者工具快捷键
-            let window = app.get_webview_window("main").unwrap();
-            
+        .setup(|#[allow(unused_variables)] app| {
             // 在生产环境中完全禁用 DevTools
             #[cfg(not(debug_assertions))]
             {
+                use tauri::Manager;
+                // 禁用开发者工具快捷键
+                let window = app.get_webview_window("main").unwrap();
+                
                 // 生产环境：禁用所有开发者工具访问
                 window.eval("
                     // 禁用 F12
