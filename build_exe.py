@@ -1,7 +1,8 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
-构建 verdent_auto_register.exe 的脚本
-使用 PyInstaller 打包，确保所有依赖都被正确包含
+Build script for verdent_auto_register.exe
+Uses PyInstaller to package with all dependencies
 """
 
 import subprocess
@@ -10,25 +11,25 @@ import os
 from pathlib import Path
 
 def build_executable():
-    """构建可执行文件"""
+    """Build the executable file"""
     
-    # 确保在正确的目录
+    # Ensure we're in the correct directory
     script_dir = Path(__file__).parent
     os.chdir(script_dir)
     
-    print("开始构建 verdent_auto_register.exe...")
+    print("Starting build of verdent_auto_register.exe...")
     
-    # PyInstaller 命令
+    # PyInstaller command
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--onefile",                    # 打包成单个文件
-        "--console",                     # 控制台程序
-        "--clean",                       # 清理临时文件
-        "--noconfirm",                   # 覆盖输出目录
-        "--collect-all", "DrissionPage", # 收集 DrissionPage 的所有内容
-        "--collect-all", "websocket",    # 收集 websocket 的所有内容
-        "--collect-all", "lxml",         # 收集 lxml 的所有内容
-        "--collect-all", "tldextract",   # 收集 tldextract 的所有内容
+        "--onefile",                    # Single file
+        "--console",                     # Console application
+        "--clean",                       # Clean temp files
+        "--noconfirm",                   # Overwrite output
+        "--collect-all", "DrissionPage", # Collect all DrissionPage content
+        "--collect-all", "websocket",    # Collect all websocket content
+        "--collect-all", "lxml",         # Collect all lxml content
+        "--collect-all", "tldextract",   # Collect all tldextract content
         "--hidden-import", "DrissionPage._base.chromium",
         "--hidden-import", "DrissionPage._pages.chromium_page",
         "--hidden-import", "DrissionPage._functions.browser",
@@ -49,44 +50,44 @@ def build_executable():
         "verdent_auto_register.py"
     ]
     
-    # 如果存在图标文件，添加图标
+    # Add icon if exists
     icon_path = Path("Verdent_account_manger/src-tauri/icons/icon.ico")
     if icon_path.exists():
         cmd.extend(["--icon", str(icon_path)])
     
-    # 执行打包命令
+    # Execute packaging command
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("打包成功！")
+        print("Build successful!")
         print(result.stdout)
         
-        # 检查输出文件
+        # Check output file
         exe_path = Path("dist/verdent_auto_register.exe")
         if exe_path.exists():
             size_mb = exe_path.stat().st_size / (1024 * 1024)
-            print(f"生成的文件: {exe_path}")
-            print(f"文件大小: {size_mb:.2f} MB")
+            print(f"Generated file: {exe_path}")
+            print(f"File size: {size_mb:.2f} MB")
             
-            # 复制到 resources 目录
+            # Copy to resources directory
             resources_dir = Path("Verdent_account_manger/resources")
             resources_dir.mkdir(exist_ok=True)
             
             import shutil
             target_path = resources_dir / "verdent_auto_register.exe"
             shutil.copy2(exe_path, target_path)
-            print(f"已复制到: {target_path}")
+            print(f"Copied to: {target_path}")
             
             return True
         else:
-            print("错误：未找到生成的 exe 文件")
+            print("Error: Generated exe file not found")
             return False
             
     except subprocess.CalledProcessError as e:
-        print(f"打包失败: {e}")
-        print(f"错误输出: {e.stderr}")
+        print(f"Build failed: {e}")
+        print(f"Error output: {e.stderr}")
         return False
     except Exception as e:
-        print(f"发生错误: {e}")
+        print(f"An error occurred: {e}")
         return False
 
 if __name__ == "__main__":
