@@ -69,6 +69,11 @@ body {
   background: #f5f5f7;
   min-height: 100vh;
   margin: 0; /* 移除默认边距 */
+  /* 禁用文本选择，让应用更像原生应用 */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
   padding: 0;
 }
 
@@ -283,15 +288,33 @@ body {
 
 .modal-footer {
   padding: 20px 25px;
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid #e5e7eb;
   display: flex;
-  gap: 10px;
+  gap: 12px;
   justify-content: flex-end;
+  background: linear-gradient(to top, #fafbfc, #ffffff);
 }
 
 .modal-footer button {
   flex: 0;
   min-width: 100px;
+  padding: 10px 20px;
+  font-size: 14px;
+  border-radius: 6px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.modal-footer button svg {
+  transition: transform 0.3s ease;
+}
+
+.modal-footer .btn-secondary:hover svg {
+  transform: rotate(180deg);
+}
+
+.modal-footer .btn-primary:hover svg {
+  transform: rotate(90deg);
 }
 
 .info-item {
@@ -334,6 +357,37 @@ body {
   font-size: 12px;
   color: #888;
   margin-top: 4px;
+}
+
+.open-folder-btn {
+  padding: 6px 8px;
+  background: #f8f8f8;
+  color: #333;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: all 0.2s;
+  min-width: 32px;
+  height: 34px;
+}
+
+.open-folder-btn:hover {
+  background: #e8e8e8;
+  border-color: #b0b0b0;
+}
+
+.open-folder-btn:active {
+  transform: scale(0.98);
+  background: #ddd;
+}
+
+.folder-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .content {
@@ -397,6 +451,11 @@ body {
   border-radius: 8px;
   font-size: 14px;
   transition: border-color 0.3s;
+  /* 允许输入框选择文本 */
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
 }
 
 .form-group input:focus,
@@ -415,6 +474,11 @@ body {
   min-height: 120px;
   transition: border-color 0.3s;
   resize: vertical;
+  /* 允许文本区域选择文本 */
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
 }
 
 .form-group textarea:focus {
@@ -456,14 +520,42 @@ button:disabled {
 }
 
 .btn-primary {
-  background: #007aff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  border: none;
+  box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+  font-weight: 500;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.btn-primary:hover::before {
+  width: 300px;
+  height: 300px;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #0051d5;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+  background: linear-gradient(135deg, #5a67d8 0%, #6b429e 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
 }
 
 .btn-danger {
@@ -478,14 +570,40 @@ button:disabled {
 }
 
 .btn-secondary {
-  background: #f5f5f7;
-  color: #1d1d1f;
-  border: 1px solid #d2d2d7;
+  background: white;
+  color: #4a5568;
+  border: 1.5px solid #e2e8f0;
+  font-weight: 500;
+  position: relative;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.btn-secondary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: linear-gradient(45deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.btn-secondary:hover::after {
+  opacity: 1;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #e8e8ed;
-  border-color: #c6c6c9;
+  background: linear-gradient(to bottom, #ffffff, #f8f9ff);
+  border-color: #a5b4fc;
+  color: #4c1d95;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.1);
 }
 
 .alert {

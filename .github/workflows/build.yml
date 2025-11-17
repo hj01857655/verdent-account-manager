@@ -158,18 +158,24 @@ jobs:
           Copy-Item "dist\verdent_auto_register.exe" "Verdent_account_manger\resources\verdent_auto_register.exe" -Force
           Write-Output "Copied to resources directory"
 
-      # macOS 和 Linux：创建占位文件
-      - name: 创建资源占位文件 (非 Windows)
+      # macOS 和 Linux：复制 Python 脚本和启动器
+      - name: 准备 Python 脚本资源 (非 Windows)
         if: matrix.platform != 'windows-latest'
         run: |
+          # 创建资源目录
           mkdir -p Verdent_account_manger/resources
-          echo '#!/bin/sh' > Verdent_account_manger/resources/verdent_auto_register
-          echo 'echo "Python auto-register script is only available on Windows platform"' >> Verdent_account_manger/resources/verdent_auto_register
-          echo 'echo "Please use Windows version or run the Python script directly:"' >> Verdent_account_manger/resources/verdent_auto_register
-          echo 'echo "python3 verdent_auto_register.py"' >> Verdent_account_manger/resources/verdent_auto_register
-          chmod +x Verdent_account_manger/resources/verdent_auto_register
-          # 为 Tauri 兼容性创建 .exe 文件
-          cp Verdent_account_manger/resources/verdent_auto_register Verdent_account_manger/resources/verdent_auto_register.exe
+          
+          # 复制主脚本
+          cp verdent_auto_register.py Verdent_account_manger/resources/verdent_auto_register.py
+          
+          # 复制启动器脚本（包含依赖检查）
+          cp verdent_auto_register_wrapper.py Verdent_account_manger/resources/verdent_auto_register_wrapper.py
+          
+          # 添加执行权限
+          chmod +x Verdent_account_manger/resources/verdent_auto_register.py
+          chmod +x Verdent_account_manger/resources/verdent_auto_register_wrapper.py
+          
+          echo "Python scripts prepared for ${{ matrix.platform }}"
 
       - name: 安装前端依赖
         working-directory: Verdent_account_manger

@@ -1,21 +1,15 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
-use chrono::Utc;
-use thiserror::Error;
+use chrono::prelude::*;
+use uuid;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::Mutex;
 
-#[derive(Debug, Error)]
-pub enum AccountError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-
-    #[error("Account not found: {0}")]
-    NotFound(String),
-}
+use crate::errors::AccountError;
+use crate::models::{Account, AccountList};
 
 // 自定义反序列化函数,支持将整数或字符串转换为 Option<String>
 fn deserialize_quota<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
@@ -31,42 +25,9 @@ where
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Account {
-    pub id: String,
-    pub email: String,
-    pub password: String,
-    pub register_time: String,
-    pub expire_time: Option<String>,      // 订阅到期时间 (从 currentPeriodEnd 转换)
-    pub status: String,
-    pub token: Option<String>,
-    #[serde(deserialize_with = "deserialize_quota")]
-    pub quota_remaining: Option<String>,  // 改为 String 以支持小数
-    #[serde(default, deserialize_with = "deserialize_quota")]
-    pub quota_used: Option<String>,       // 新增: 已消耗额度 (旧数据可能没有此字段)
-    #[serde(deserialize_with = "deserialize_quota")]
-    pub quota_total: Option<String>,      // 改为 String 以支持小数
-    #[serde(default)]
-    pub subscription_type: Option<String>,
-    #[serde(default)]
-    pub trial_days: Option<i32>,          // 新增: 试用天数 (旧数据可能没有此字段)
-    #[serde(default)]
-    pub current_period_end: Option<i64>,  // 新增: 订阅周期结束时间 (Unix时间戳,秒)
-    #[serde(default)]
-    pub auto_renew: Option<bool>,         // 新增: 是否自动续订
-    #[serde(default)]
-    pub token_expire_time: Option<String>, // 新增: Token 过期时间 (从 JWT exp 字段解析)
-    pub last_updated: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AccountList {
-    pub accounts: Vec<Account>,
-    pub last_sync: String,
-}
-
 pub struct AccountManager {
     storage_path: PathBuf,
+    file_lock: Mutex<()>,  // 文件锁，防止并发写入
 }
 
 impl AccountManager {
@@ -87,7 +48,10 @@ impl AccountManager {
             fs::write(&storage_path, serde_json::to_string_pretty(&initial_data)?)?;
         }
         
-        Ok(Self { storage_path })
+        Ok(Self { 
+            storage_path,
+            file_lock: Mutex::new(()),
+        })
     }
     
     pub fn get_storage_path(&self) -> String {
@@ -95,13 +59,71 @@ impl AccountManager {
     }
     
     fn load(&self) -> Result<AccountList, AccountError> {
-        let content = fs::read_to_string(&self.storage_path)?;
-        Ok(serde_json::from_str(&content)?)
+        // 尝试读取主文件
+        match fs::read_to_string(&self.storage_path) {
+            Ok(content) => {
+                match serde_json::from_str::<AccountList>(&content) {
+                    Ok(data) => Ok(data),
+                    Err(e) => {
+                        eprintln!("[!] 主文件 JSON 格式错误: {}", e);
+                        
+                        // 尝试从备份文件恢复
+                        let backup_path = self.storage_path.with_extension("backup");
+                        if backup_path.exists() {
+                            eprintln!("[*] 尝试从备份文件恢复...");
+                            let backup_content = fs::read_to_string(&backup_path)?;
+                            match serde_json::from_str::<AccountList>(&backup_content) {
+                                Ok(data) => {
+                                    eprintln!("[✓] 成功从备份恢复");
+                                    // 恢复备份到主文件
+                                    self.save(&data)?;
+                                    Ok(data)
+                                }
+                                Err(_) => {
+                                    eprintln!("[×] 备份文件也已损坏，创建新文件");
+                                    Ok(AccountList::default())
+                                }
+                            }
+                        } else {
+                            eprintln!("[×] 无备份文件，创建新文件");
+                            Ok(AccountList::default())
+                        }
+                    }
+                }
+            }
+            Err(e) => Err(AccountError::from(e))
+        }
     }
     
     fn save(&self, data: &AccountList) -> Result<(), AccountError> {
+        // 获取文件锁，防止并发写入
+        let _lock = self.file_lock.lock().unwrap();
+        
         let content = serde_json::to_string_pretty(data)?;
-        fs::write(&self.storage_path, content)?;
+        
+        // 使用原子写入：先写入临时文件，再重命名
+        let temp_path = self.storage_path.with_extension("tmp");
+        
+        // 创建备份文件（如果原文件存在）
+        if self.storage_path.exists() {
+            let backup_path = self.storage_path.with_extension("backup");
+            let _ = fs::copy(&self.storage_path, &backup_path);
+        }
+        
+        // 写入临时文件
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&temp_path)?;
+        
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;  // 确保数据写入磁盘
+        drop(file);  // 关闭文件
+        
+        // 原子重命名
+        fs::rename(&temp_path, &self.storage_path)?;
+        
         Ok(())
     }
     

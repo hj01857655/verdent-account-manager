@@ -1,4 +1,5 @@
-use crate::account_manager::{Account, AccountManager};
+use crate::account_manager::AccountManager;
+use crate::models::Account;
 use crate::api::VerdentApi;
 use crate::jwt_utils;
 use crate::pkce::PkceParams;
@@ -12,48 +13,105 @@ use tauri::Manager;
 /// 查找自动注册可执行文件
 ///
 /// 返回: (可执行文件路径, 是否为开发模式)
-fn find_register_executable(
-    app_handle: &tauri::AppHandle,
-    current_dir: &PathBuf
-) -> Result<(PathBuf, bool), String> {
-    println!("[*] ========== 开始查找可执行文件 ==========");
+fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf) -> Result<(PathBuf, bool), String> {
     println!("[*] 当前工作目录: {}", current_dir.display());
+    println!("[*] 操作系统: {}", std::env::consts::OS);
 
-    // 1. 尝试查找打包的 exe 文件 (生产模式)
-    if let Ok(resource_path) = app_handle.path().resource_dir() {
-        println!("[*] Tauri resource_dir: {}", resource_path.display());
+    // 1. 尝试查找打包的可执行文件 (生产模式)
+    // 注意：macOS 不能运行 .exe 文件
+    if cfg!(target_os = "windows") {
+        // Windows: 查找 .exe 文件
+        if let Ok(resource_path) = app_handle.path().resource_dir() {
+            println!("[*] Tauri resource_dir: {}", resource_path.display());
 
-        // 尝试多个可能的路径
-        let exe_candidates = vec![
-            // 直接在 resource_dir 下
-            resource_path.join("verdent_auto_register.exe"),
-            // 在 resources 子目录下
-            resource_path.join("resources").join("verdent_auto_register.exe"),
-            // 在 _up_/resources 下 (Tauri 2.0 某些情况)
-            resource_path.join("_up_").join("resources").join("verdent_auto_register.exe"),
-        ];
+            // 尝试多个可能的路径
+            let exe_candidates = vec![
+                // 直接在 resource_dir 下
+                resource_path.join("verdent_auto_register.exe"),
+                // 在 resources 子目录下
+                resource_path.join("resources").join("verdent_auto_register.exe"),
+                // 在 _up_/resources 下 (Tauri 2.0 某些情况)
+                resource_path.join("_up_").join("resources").join("verdent_auto_register.exe"),
+            ];
 
-        for exe_path in exe_candidates {
-            println!("[*] 检查生产模式 exe: {}", exe_path.display());
-            if exe_path.exists() {
-                println!("[✓] 找到生产模式 exe 文件: {}", exe_path.display());
-                return Ok((exe_path, false));
+            for exe_path in exe_candidates {
+                println!("[*] 检查生产模式 exe: {}", exe_path.display());
+                if exe_path.exists() {
+                    println!("[✓] 找到生产模式 exe 文件: {}", exe_path.display());
+                    return Ok((exe_path, false));
+                }
             }
         }
-
-        // 列出 resource_dir 的内容以便调试
+    } else if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
+        // macOS/Linux: 优先查找包装脚本（包含依赖检查）
+        // 在打包的应用中，Python 脚本可能在 Resources 目录下
+        if let Ok(resource_path) = app_handle.path().resource_dir() {
+            println!("[*] Tauri resource_dir: {}", resource_path.display());
+            
+            // 优先查找包装脚本（包含自动依赖安装）
+            let wrapper_candidates = vec![
+                resource_path.join("verdent_auto_register_wrapper.py"),
+                resource_path.join("resources").join("verdent_auto_register_wrapper.py"),
+                resource_path.join("_up_").join("resources").join("verdent_auto_register_wrapper.py"),
+            ];
+            
+            for wrapper_path in wrapper_candidates {
+                println!("[*] 检查包装脚本: {}", wrapper_path.display());
+                if wrapper_path.exists() {
+                    println!("[✓] 找到包装脚本 (包含依赖检查): {}", wrapper_path.display());
+                    return Ok((wrapper_path, true));  // 返回 true 表示是 Python 脚本
+                }
+            }
+            
+            // 如果没有包装脚本，查找主脚本
+            let script_candidates = vec![
+                resource_path.join("verdent_auto_register.py"),
+                resource_path.join("resources").join("verdent_auto_register.py"),
+                resource_path.join("_up_").join("resources").join("verdent_auto_register.py"),
+            ];
+            
+            for script_path in script_candidates {
+                println!("[*] 检查主脚本: {}", script_path.display());
+                if script_path.exists() {
+                    println!("[✓] 找到主脚本: {}", script_path.display());
+                    return Ok((script_path, true));  // 返回 true 表示是 Python 脚本
+                }
+            }
+        }
+    }
+    
+    // 列出 resource_dir 的内容以便调试
+    if let Ok(resource_path) = app_handle.path().resource_dir() {
         println!("[*] resource_dir 目录内容:");
         if let Ok(entries) = std::fs::read_dir(&resource_path) {
             for entry in entries.flatten() {
                 println!("    - {}", entry.path().display());
             }
         }
-    } else {
-        println!("[!] 无法获取 resource_dir (可能在开发模式)");
     }
 
     // 2. 尝试查找 Python 脚本 (开发模式)
     println!("[*] 尝试查找开发模式 Python 脚本...");
+    
+    // 先尝试查找包装脚本（包含依赖检查）
+    let wrapper_candidates: Vec<Option<PathBuf>> = vec![
+        // 当前目录
+        Some(current_dir.join("verdent_auto_register_wrapper.py")),
+        // 父目录 (src-tauri 的父目录)
+        current_dir.parent().map(|p: &std::path::Path| p.join("verdent_auto_register_wrapper.py")),
+        // 祖父目录
+        current_dir.parent().and_then(|p: &std::path::Path| p.parent()).map(|p: &std::path::Path| p.join("verdent_auto_register_wrapper.py")),
+    ];
+
+    for candidate in wrapper_candidates.into_iter().filter_map(|p| p) {
+        println!("[*] 检查开发模式包装脚本: {}", candidate.display());
+        if candidate.exists() {
+            println!("[✓] 找到开发模式包装脚本 (包含依赖检查): {}", candidate.display());
+            return Ok((candidate, true));
+        }
+    }
+    
+    // 如果没有包装脚本，查找主脚本
     let script_candidates: Vec<Option<PathBuf>> = vec![
         // 当前目录
         Some(current_dir.join("verdent_auto_register.py")),
@@ -64,9 +122,9 @@ fn find_register_executable(
     ];
 
     for candidate in script_candidates.into_iter().filter_map(|p| p) {
-        println!("[*] 检查开发模式脚本: {}", candidate.display());
+        println!("[*] 检查开发模式主脚本: {}", candidate.display());
         if candidate.exists() {
-            println!("[✓] 找到开发模式 Python 脚本: {}", candidate.display());
+            println!("[✓] 找到开发模式主脚本: {}", candidate.display());
             return Ok((candidate, true));
         }
     }
@@ -159,7 +217,13 @@ pub async fn auto_register_accounts(
     // 构建命令 - 根据运行模式选择不同的执行方式
     let mut cmd = if is_dev_mode {
         // 开发模式: 使用 python 解释器运行 .py 脚本
-        let mut c = Command::new("python");
+        // macOS 默认使用 python3，Windows 使用 python
+        let python_cmd = if cfg!(target_os = "macos") { 
+            "python3" 
+        } else { 
+            "python" 
+        };
+        let mut c = Command::new(python_cmd);
         c.arg(&executable_path);
         c
     } else {
@@ -1681,9 +1745,9 @@ pub async fn import_account_by_token(token: String) -> Result<ImportAccountRespo
             if let Ok(expire_dt) = chrono::DateTime::parse_from_rfc3339(exp_time) {
                 let now = chrono::Local::now();
                 existing.status = if expire_dt > now {
-                    "active".to_string()
+                    Some("active".to_string())
                 } else {
-                    "expired".to_string()
+                    Some("expired".to_string())
                 };
             }
         }
@@ -1703,9 +1767,9 @@ pub async fn import_account_by_token(token: String) -> Result<ImportAccountRespo
             id: uuid::Uuid::new_v4().to_string(),
             email: email.clone(),
             password: String::new(), // 通过 Token 导入的账户没有密码
-            register_time: chrono::Local::now().to_rfc3339(),
+            register_time: Some(chrono::Local::now().to_rfc3339()),
             expire_time,
-            status: "active".to_string(),
+            status: Some("active".to_string()),
             token: Some(token.clone()),
             quota_remaining: Some(format!("{:.2}", quota_remaining)),
             quota_used: Some(format!("{:.2}", quota_consumed)),
@@ -1805,7 +1869,7 @@ pub async fn import_account_by_credentials(email: String, password: String) -> R
                 existing.password = password.clone();
                 existing.token = Some(token.clone());
                 existing.last_updated = Some(chrono::Local::now().to_rfc3339());
-                existing.status = "active".to_string();
+                existing.status = Some("active".to_string());
                 
                 manager.update_account(&existing.id, existing.clone())
                     .map_err(|e| format!("更新账户失败: {}", e))?;
@@ -1817,9 +1881,9 @@ pub async fn import_account_by_credentials(email: String, password: String) -> R
                     id: uuid::Uuid::new_v4().to_string(),
                     email: email.clone(),
                     password: password.clone(),
-                    register_time: chrono::Local::now().to_rfc3339(),
+                    register_time: Some(chrono::Local::now().to_rfc3339()),
                     expire_time: None,
-                    status: "active".to_string(),
+                    status: Some("active".to_string()),
                     token: Some(token.clone()),
                     quota_remaining: None,
                     quota_used: None,
@@ -1921,9 +1985,9 @@ pub async fn import_account_by_credentials(email: String, password: String) -> R
             if let Ok(expire_dt) = chrono::DateTime::parse_from_rfc3339(exp_time) {
                 let now = chrono::Local::now();
                 existing.status = if expire_dt > now {
-                    "active".to_string()
+                    Some("active".to_string())
                 } else {
-                    "expired".to_string()
+                    Some("expired".to_string())
                 };
             }
         }
@@ -1941,9 +2005,9 @@ pub async fn import_account_by_credentials(email: String, password: String) -> R
             id: uuid::Uuid::new_v4().to_string(),
             email: email.clone(),
             password: password.clone(),
-            register_time: chrono::Local::now().to_rfc3339(),
+            register_time: Some(chrono::Local::now().to_rfc3339()),
             expire_time,
-            status: "active".to_string(),
+            status: Some("active".to_string()),
             token: Some(token.clone()),
             quota_remaining: Some(format!("{:.2}", quota_remaining)),
             quota_used: Some(format!("{:.2}", quota_consumed)),
@@ -2022,4 +2086,60 @@ pub async fn update_register_config(
     let manager = SettingsManager::new().map_err(|e| e.to_string())?;
     manager.update_register_config(count, max_workers, password, use_random_password, headless)
         .map_err(|e| e.to_string())
+}
+
+/// 打开存储文件夹
+#[tauri::command]
+pub fn open_storage_folder() -> Result<String, String> {
+    let storage_dir = dirs::home_dir()
+        .ok_or_else(|| "无法获取主目录".to_string())?
+        .join(".verdent_accounts");
+    
+    // 确保目录存在
+    if !storage_dir.exists() {
+        std::fs::create_dir_all(&storage_dir)
+            .map_err(|e| format!("创建存储目录失败: {}", e))?;
+    }
+    
+    let path_str = storage_dir.to_string_lossy().to_string();
+    
+    // 根据操作系统打开文件管理器
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(&path_str)
+            .spawn()
+            .map_err(|e| format!("打开资源管理器失败: {}", e))?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&path_str)
+            .spawn()
+            .map_err(|e| format!("打开 Finder 失败: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // 尝试不同的文件管理器
+        let managers = ["xdg-open", "gnome-open", "nautilus", "dolphin", "thunar", "pcmanfm"];
+        let mut opened = false;
+        
+        for manager in &managers {
+            if Command::new(manager)
+                .arg(&path_str)
+                .spawn()
+                .is_ok() {
+                opened = true;
+                break;
+            }
+        }
+        
+        if !opened {
+            return Err("无法打开文件管理器，请手动访问: ".to_string() + &path_str);
+        }
+    }
+    
+    Ok(path_str)
 }

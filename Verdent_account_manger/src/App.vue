@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { getVersion } from '@tauri-apps/api/app'
 import AccountManager from './components/AccountManager.vue'
 
 interface LoginRequest {
@@ -42,7 +43,7 @@ const activeTab = ref<'login' | 'reset' | 'accounts'>('accounts')
 const token = ref('')
 const deviceId = ref('python-auto-login')
 const appVersion = ref('1.0.9')
-const managerVersion = ref('1.0.0')  // 管理器版本
+const managerVersion = ref('1.3.0')  // 管理器版本（默认值）
 const accountsStoragePath = ref('')  // 账号存储路径
 const openVscode = ref(true)
 const loading = ref(false)
@@ -55,6 +56,16 @@ const vscodeIds = ref<VSCodeIdsInfo | null>(null)
 onMounted(async () => {
   await loadStorageInfo()
   await loadVSCodeIds()
+  
+  // 获取管理器版本号
+  try {
+    const version = await getVersion()
+    managerVersion.value = version
+  } catch (error) {
+    console.error('获取版本号失败:', error)
+    // 保持默认值 1.3.0
+  }
+  
   // 获取账号存储路径
   try {
     const appDataPath = await invoke<string>('get_app_data_path')
@@ -62,7 +73,90 @@ onMounted(async () => {
   } catch (error) {
     accountsStoragePath.value = '获取失败'
   }
+  
+  // 禁用右键菜单
+  document.addEventListener('contextmenu', handleContextMenu)
+  
+  // 禁用开发者工具快捷键
+  document.addEventListener('keydown', handleKeydown)
+  
+  // 在生产环境中禁用控制台
+  if (import.meta.env.PROD) {
+    // 禁用控制台方法
+    const noop = () => {}
+    console.log = noop
+    console.warn = noop
+    console.error = noop
+    console.info = noop
+    console.debug = noop
+    console.trace = noop
+    console.table = noop
+    console.group = noop
+    console.groupEnd = noop
+    console.groupCollapsed = noop
+    console.clear = noop
+    console.time = noop
+    console.timeEnd = noop
+    
+    // 禁用 DevTools 检测
+    const detectDevTools = () => {
+      const threshold = 160
+      if (window.outerWidth - window.innerWidth > threshold || 
+          window.outerHeight - window.innerHeight > threshold) {
+        // DevTools 可能已打开，可以选择刷新页面或显示警告
+        document.body.innerHTML = '<h1 style="text-align:center;margin-top:50px;">请关闭开发者工具后刷新页面</h1>'
+      }
+    }
+    
+    // 定期检测
+    setInterval(detectDevTools, 500)
+  }
 })
+
+// 组件卸载时移除事件监听
+onUnmounted(() => {
+  document.removeEventListener('contextmenu', handleContextMenu)
+  document.removeEventListener('keydown', handleKeydown)
+})
+
+// 处理右键事件
+function handleContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  return false
+}
+
+// 禁用开发者工具快捷键
+function handleKeydown(e: KeyboardEvent) {
+  // F12
+  if (e.key === 'F12' || e.keyCode === 123) {
+    e.preventDefault()
+    return false
+  }
+  
+  // Ctrl+Shift+I / Cmd+Option+I
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.keyCode === 73)) {
+    e.preventDefault()
+    return false
+  }
+  
+  // Ctrl+Shift+J / Cmd+Option+J
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.keyCode === 74)) {
+    e.preventDefault()
+    return false
+  }
+  
+  // Ctrl+Shift+C / Cmd+Option+C (元素检查)
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'C' || e.keyCode === 67)) {
+    e.preventDefault()
+    return false
+  }
+  
+  // Ctrl+U / Cmd+U (查看源代码)
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u')) {
+    e.preventDefault()
+    return false
+  }
+}
 
 async function loadStorageInfo() {
   try {
@@ -121,6 +215,16 @@ async function handleLogin() {
     showMessage('error', `登录失败: ${error}`)
   } finally {
     loading.value = false
+  }
+}
+
+async function handleOpenFolder() {
+  try {
+    const path = await invoke('open_storage_folder')
+    console.log('存储位置已打开:', path)
+  } catch (error) {
+    console.error('打开存储文件夹失败:', error)
+    alert(`打开存储文件夹失败: ${error}`)
   }
 }
 
@@ -262,7 +366,16 @@ function showMessage(type: 'success' | 'error' | 'info', text: string) {
           </div>
           <div class="info-item">
             <div class="info-label">账号存储位置</div>
-            <input :value="accountsStoragePath || '未知'" type="text" class="info-input" readonly />
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input :value="accountsStoragePath || '未知'" type="text" class="info-input" readonly style="flex: 1;" />
+              <button 
+                class="open-folder-btn" 
+                @click="handleOpenFolder"
+                title="打开存储文件夹"
+              >
+                <img src="/文件夹.svg" alt="" class="folder-icon" />
+              </button>
+            </div>
             <div class="info-hint">账号数据文件存储路径</div>
           </div>
           <div class="info-item">
@@ -287,8 +400,24 @@ function showMessage(type: 'success' | 'error' | 'info', text: string) {
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" @click="loadVSCodeIds">刷新</button>
-          <button class="btn-primary" @click="showInfo = false">关闭</button>
+          <button class="btn-secondary" @click="loadVSCodeIds">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C14.8273 3 17.35 4.30367 19 6.34267" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M21 3V7H17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              刷新
+            </span>
+          </button>
+          <button class="btn-primary" @click="showInfo = false">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">
+              关闭
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
         </div>
       </div>
     </div>

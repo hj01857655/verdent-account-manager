@@ -6,13 +6,61 @@ mod vscode_storage;
 mod account_manager;
 mod jwt_utils;
 mod settings_manager;
+mod errors;
+mod models;
 
 use commands::*;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            // 禁用开发者工具快捷键
+            let window = app.get_webview_window("main").unwrap();
+            
+            // 在生产环境中完全禁用 DevTools
+            #[cfg(not(debug_assertions))]
+            {
+                // 生产环境：禁用所有开发者工具访问
+                window.eval("
+                    // 禁用 F12
+                    document.addEventListener('keydown', function(e) {
+                        if (e.keyCode === 123) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                    
+                    // 禁用 Ctrl+Shift+I (Windows/Linux) 和 Cmd+Option+I (Mac)
+                    document.addEventListener('keydown', function(e) {
+                        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.keyCode === 73) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                    
+                    // 禁用 Ctrl+Shift+J (Windows/Linux) 和 Cmd+Option+J (Mac)
+                    document.addEventListener('keydown', function(e) {
+                        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.keyCode === 74) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                    
+                    // 禁用 Ctrl+Shift+C (Windows/Linux) 和 Cmd+Option+C (Mac)
+                    document.addEventListener('keydown', function(e) {
+                        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.keyCode === 67) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                ").unwrap();
+            }
+            
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             login_with_token,
             reset_device_identity,
@@ -33,6 +81,7 @@ pub fn run() {
             login_to_windsurf,
             login_to_cursor,
             refresh_account_info,
+            open_storage_folder,
             test_login_and_update,
             import_account_by_token,
             import_account_by_credentials,
