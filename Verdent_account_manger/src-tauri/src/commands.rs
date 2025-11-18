@@ -4,6 +4,7 @@ use crate::api::VerdentApi;
 use crate::jwt_utils;
 use crate::pkce::PkceParams;
 use crate::settings_manager::{UserSettings, SettingsManager};
+use crate::verdent_client::VerdentClientManager;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -47,7 +48,7 @@ fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf
         // 在打包的应用中，Python 脚本可能在 Resources 目录下
         if let Ok(resource_path) = app_handle.path().resource_dir() {
             println!("[*] Tauri resource_dir: {}", resource_path.display());
-            
+
             // 优先查找包装脚本（包含自动依赖安装）
             let wrapper_candidates = vec![
                 resource_path.join("verdent_auto_register_wrapper.py"),
@@ -55,7 +56,7 @@ fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf
                 resource_path.join("_up_").join("verdent_auto_register_wrapper.py"),
                 resource_path.join("_up_").join("resources").join("verdent_auto_register_wrapper.py"),
             ];
-            
+
             for wrapper_path in wrapper_candidates {
                 println!("[*] 检查包装脚本: {}", wrapper_path.display());
                 if wrapper_path.exists() {
@@ -63,7 +64,7 @@ fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf
                     return Ok((wrapper_path, true));  // 返回 true 表示是 Python 脚本
                 }
             }
-            
+
             // 如果没有包装脚本，查找主脚本
             let script_candidates = vec![
                 resource_path.join("verdent_auto_register.py"),
@@ -71,7 +72,7 @@ fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf
                 resource_path.join("_up_").join("verdent_auto_register.py"),
                 resource_path.join("_up_").join("resources").join("verdent_auto_register.py"),
             ];
-            
+
             for script_path in script_candidates {
                 println!("[*] 检查主脚本: {}", script_path.display());
                 if script_path.exists() {
@@ -81,7 +82,7 @@ fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf
             }
         }
     }
-    
+
     // 列出 resource_dir 的内容以便调试
     if let Ok(resource_path) = app_handle.path().resource_dir() {
         println!("[*] resource_dir 目录内容:");
@@ -90,7 +91,7 @@ fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf
                 println!("    - {}", entry.path().display());
             }
         }
-        
+
         // 同时检查 _up_ 目录的内容
         let up_dir = resource_path.join("_up_");
         if up_dir.exists() {
@@ -105,7 +106,7 @@ fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf
 
     // 2. 尝试查找 Python 脚本 (开发模式)
     println!("[*] 尝试查找开发模式 Python 脚本...");
-    
+
     // 先尝试查找包装脚本（包含依赖检查）
     let wrapper_candidates: Vec<Option<PathBuf>> = vec![
         // 当前目录
@@ -130,7 +131,7 @@ fn find_register_executable(app_handle: &tauri::AppHandle, current_dir: &PathBuf
             return Ok((candidate, true));
         }
     }
-    
+
     // 如果没有包装脚本，查找主脚本
     let script_candidates: Vec<Option<PathBuf>> = vec![
         // 当前目录
@@ -222,7 +223,7 @@ pub async fn auto_register_accounts(
     println!("    并发数: {}", request.max_workers);
     println!("    无头模式: {}", request.headless);
     println!("    使用随机密码: {}", request.use_random_password);
-    
+
     // 保存请求的总数量用于统计
     let total_count = request.count;
 
@@ -244,10 +245,10 @@ pub async fn auto_register_accounts(
     let mut cmd = if is_dev_mode {
         // 开发模式: 使用 python 解释器运行 .py 脚本
         // macOS 默认使用 python3，Windows 使用 python
-        let python_cmd = if cfg!(target_os = "macos") { 
-            "python3" 
-        } else { 
-            "python" 
+        let python_cmd = if cfg!(target_os = "macos") {
+            "python3"
+        } else {
+            "python"
         };
         let mut c = Command::new(python_cmd);
         c.arg(&executable_path);
@@ -386,10 +387,10 @@ pub async fn auto_register_accounts(
             eprintln!("    错误输出:");
             eprintln!("{}", stderr_output);
         }
-        
+
         // 检测浏览器断开连接的特定错误（同时检查 stdout 和 stderr）
         let combined_output = format!("{}\n{}", stdout_output, stderr_output);
-        let error_msg = if combined_output.contains("浏览器已被用户关闭") || 
+        let error_msg = if combined_output.contains("浏览器已被用户关闭") ||
                            combined_output.contains("连接中断") ||
                            combined_output.contains("浏览器连接已断开") {
             eprintln!("[×] 检测到浏览器断开连接");
@@ -397,7 +398,7 @@ pub async fn auto_register_accounts(
         } else {
             format!("注册脚本执行失败 (退出码: {:?})\n{}", status.code(), stderr_output)
         };
-        
+
         return Ok(AutoRegisterResponse {
             success: false,
             registered_count: 0,
@@ -448,19 +449,19 @@ pub async fn auto_register_accounts(
                 println!("    ✓ 保存成功");
 
                 // 检查账户信息是否完整
-                let has_complete_info = saved.quota_total.is_some() 
-                    && saved.quota_used.is_some() 
-                    && saved.quota_remaining.is_some() 
+                let has_complete_info = saved.quota_total.is_some()
+                    && saved.quota_used.is_some()
+                    && saved.quota_remaining.is_some()
                     && saved.subscription_type.is_some();
 
                 if has_complete_info {
                     // 信息已完整,仅补充 Token 过期时间和更新时间
                     println!("    [*] 账户信息已完整,无需刷新");
-                    
+
                     if let Some(token) = &saved.token {
                         saved.token_expire_time = jwt_utils::extract_token_expire_time(token);
                     }
-                    
+
                     saved.last_updated = Some(chrono::Local::now().to_rfc3339());
 
                     // 保存更新后的账户
@@ -562,7 +563,7 @@ pub async fn auto_register_accounts(
 
     let success_count = saved_accounts.len() as u32;
     let failed_count = accounts.len() as u32 - success_count;
-    
+
     println!("[✓] 自动注册完成: 成功 {}/{} 个账号, 失败 {} 个", success_count, accounts.len(), failed_count);
     println!("[*] ====================================\n");
 
@@ -730,19 +731,19 @@ pub async fn reset_device_identity() -> Result<bool, String> {
 pub async fn reset_all_storage() -> Result<bool, String> {
     use crate::storage::StorageManager;
     use crate::vscode_storage::VSCodeStorageManager;
-    
+
     let storage = StorageManager::new().map_err(|e| e.to_string())?;
     storage.clear().map_err(|e| e.to_string())?;
-    
+
     let vscode_storage = VSCodeStorageManager::new().map_err(|e| e.to_string())?;
     vscode_storage.clear().map_err(|e| e.to_string())?;
-    
+
     let account_mgr = AccountManager::new().map_err(|e| e.to_string())?;
     let accounts = account_mgr.get_all_accounts().map_err(|e| e.to_string())?;
     for account in accounts {
         let _ = account_mgr.delete_account(&account.id);
     }
-    
+
     Ok(true)
 }
 
@@ -750,7 +751,7 @@ pub async fn reset_all_storage() -> Result<bool, String> {
 pub async fn get_storage_info() -> Result<StorageInfo, String> {
     use crate::storage::StorageManager;
     let storage = StorageManager::new().map_err(|e| e.to_string())?;
-    
+
     Ok(StorageInfo {
         path: storage.get_path().to_string_lossy().to_string(),
         keys: storage.list_keys().map_err(|e| e.to_string())?,
@@ -1851,7 +1852,7 @@ pub async fn import_account_by_credentials(email: String, password: String) -> R
     // 步骤1: 尝试登录获取Token
     println!("[*] 正在登录账户...");
     let api = VerdentApi::new();
-    
+
     let token = match api.login(&email, &password).await {
         Ok(login_data) => {
             println!("[✓] 登录成功，获取到 Token");
@@ -1880,10 +1881,10 @@ pub async fn import_account_by_credentials(email: String, password: String) -> R
             eprintln!("[×] 获取用户信息失败: {}", e);
             // 即使获取用户信息失败，也保存基本账户信息
             println!("[!] 将保存基本账户信息");
-            
+
             // 创建基本账户
             let manager = AccountManager::new().map_err(|e| format!("加载账户管理器失败: {}", e))?;
-            
+
             // 检查账户是否已存在
             let existing_account = manager.get_all_accounts()
                 .map_err(|e| e.to_string())?
@@ -1896,10 +1897,10 @@ pub async fn import_account_by_credentials(email: String, password: String) -> R
                 existing.token = Some(token.clone());
                 existing.last_updated = Some(chrono::Local::now().to_rfc3339());
                 existing.status = Some("active".to_string());
-                
+
                 manager.update_account(&existing.id, existing.clone())
                     .map_err(|e| format!("更新账户失败: {}", e))?;
-                    
+
                 existing
             } else {
                 // 创建新账户
@@ -1921,13 +1922,13 @@ pub async fn import_account_by_credentials(email: String, password: String) -> R
                     token_expire_time: jwt_utils::extract_token_expire_time(&token),
                     last_updated: Some(chrono::Local::now().to_rfc3339()),
                 };
-                
+
                 manager.add_account(new_account.clone())
                     .map_err(|e| format!("添加账户失败: {}", e))?;
-                    
+
                 new_account
             };
-            
+
             println!("[✓] 账户导入成功（基本信息）: {}", email);
             return Ok(ImportAccountResponse {
                 success: true,
@@ -2120,15 +2121,15 @@ pub fn open_storage_folder() -> Result<String, String> {
     let storage_dir = dirs::home_dir()
         .ok_or_else(|| "无法获取主目录".to_string())?
         .join(".verdent_accounts");
-    
+
     // 确保目录存在
     if !storage_dir.exists() {
         std::fs::create_dir_all(&storage_dir)
             .map_err(|e| format!("创建存储目录失败: {}", e))?;
     }
-    
+
     let path_str = storage_dir.to_string_lossy().to_string();
-    
+
     // 根据操作系统打开文件管理器
     #[cfg(target_os = "windows")]
     {
@@ -2137,7 +2138,7 @@ pub fn open_storage_folder() -> Result<String, String> {
             .spawn()
             .map_err(|e| format!("打开资源管理器失败: {}", e))?;
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
@@ -2145,13 +2146,13 @@ pub fn open_storage_folder() -> Result<String, String> {
             .spawn()
             .map_err(|e| format!("打开 Finder 失败: {}", e))?;
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         // 尝试不同的文件管理器
         let managers = ["xdg-open", "gnome-open", "nautilus", "dolphin", "thunar", "pcmanfm"];
         let mut opened = false;
-        
+
         for manager in &managers {
             if Command::new(manager)
                 .arg(&path_str)
@@ -2161,12 +2162,12 @@ pub fn open_storage_folder() -> Result<String, String> {
                 break;
             }
         }
-        
+
         if !opened {
             return Err("无法打开文件管理器，请手动访问: ".to_string() + &path_str);
         }
     }
-    
+
     Ok(path_str)
 }
 
@@ -2188,32 +2189,32 @@ pub async fn save_proxy_settings(enabled: bool, url: String) -> Result<(), Strin
 pub async fn get_trial_checkout_url(token: String) -> Result<serde_json::Value, String> {
     use reqwest::header::{HeaderMap, HeaderValue, COOKIE};
     use serde_json::json;
-    
+
     // 加载代理设置
     let proxy_settings = crate::proxy_manager::ProxyManager::load()
         .unwrap_or_default();
-    
+
     // 创建HTTP客户端
     let mut client_builder = reqwest::Client::builder();
-    
+
     if proxy_settings.enabled && !proxy_settings.url.is_empty() {
         println!("[DEBUG] 使用代理: {}", proxy_settings.url);
         let proxy = reqwest::Proxy::all(&proxy_settings.url)
             .map_err(|e| format!("代理配置错误: {}", e))?;
         client_builder = client_builder.proxy(proxy);
     }
-    
+
     let client = client_builder
         .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
-    
+
     // 构建请求头
     let mut headers = HeaderMap::new();
     let cookie_value = format!("token={}", token);
     headers.insert(COOKIE, HeaderValue::from_str(&cookie_value)
         .map_err(|e| format!("设置Cookie失败: {}", e))?);
-    
+
     // 获取用户信息
     let user_info_url = "https://agent.verdent.ai/user/center/info";
     let user_info_response = client
@@ -2222,23 +2223,23 @@ pub async fn get_trial_checkout_url(token: String) -> Result<serde_json::Value, 
         .send()
         .await
         .map_err(|e| format!("获取用户信息失败: {}", e))?;
-    
+
     if !user_info_response.status().is_success() {
         return Err(format!("获取用户信息失败: HTTP {}", user_info_response.status()));
     }
-    
+
     let user_info: serde_json::Value = user_info_response.json()
         .await
         .map_err(|e| format!("解析用户信息失败: {}", e))?;
-    
+
     // 从用户信息中获取 trialPlanId
     let trial_plan_id = user_info["data"]["trialPlanId"]
         .as_str()
         .ok_or_else(|| "无法获取试用计划ID".to_string())?;
-    
+
     // 生成设备ID (UUID v4)
     let device_id = uuid::Uuid::new_v4().to_string();
-    
+
     // 创建订阅请求
     let create_subscription_url = "https://api.verdent.ai/verdent/subscription/create";
     let subscription_body = json!({
@@ -2246,7 +2247,7 @@ pub async fn get_trial_checkout_url(token: String) -> Result<serde_json::Value, 
         "device_id": device_id,
         "source": "verdent"
     });
-    
+
     let subscription_response = client
         .post(create_subscription_url)
         .headers(headers)
@@ -2254,15 +2255,15 @@ pub async fn get_trial_checkout_url(token: String) -> Result<serde_json::Value, 
         .send()
         .await
         .map_err(|e| format!("创建订阅失败: {}", e))?;
-    
+
     if !subscription_response.status().is_success() {
         return Err(format!("创建订阅失败: HTTP {}", subscription_response.status()));
     }
-    
+
     let subscription_result: serde_json::Value = subscription_response.json()
         .await
         .map_err(|e| format!("解析订阅结果失败: {}", e))?;
-    
+
     // 检查是否有错误码
     if let Some(err_code) = subscription_result["errCode"].as_i64() {
         if err_code != 0 {
@@ -2272,12 +2273,12 @@ pub async fn get_trial_checkout_url(token: String) -> Result<serde_json::Value, 
             return Err(format!("API错误: {}", err_msg));
         }
     }
-    
+
     // 获取 checkout_url
     let checkout_url = subscription_result["data"]["checkout_url"]
         .as_str()
         .ok_or_else(|| "无法获取绑卡链接".to_string())?;
-    
+
     Ok(json!({
         "success": true,
         "checkout_url": checkout_url
@@ -2288,7 +2289,7 @@ pub async fn get_trial_checkout_url(token: String) -> Result<serde_json::Value, 
 #[tauri::command]
 pub async fn open_incognito_browser(url: String) -> Result<(), String> {
     use std::process::Command;
-    
+
     #[cfg(target_os = "windows")]
     {
         // Windows: 使用Chrome的无痕模式
@@ -2298,7 +2299,7 @@ pub async fn open_incognito_browser(url: String) -> Result<(), String> {
             ("C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe", "--inprivate"),
             ("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "--inprivate"),
         ];
-        
+
         for (browser_path, flag) in browsers {
             if std::path::Path::new(browser_path).exists() {
                 Command::new(browser_path)
@@ -2309,14 +2310,14 @@ pub async fn open_incognito_browser(url: String) -> Result<(), String> {
                 return Ok(());
             }
         }
-        
+
         // 如果找不到特定浏览器，使用系统默认浏览器
         Command::new("cmd")
             .args(&["/C", "start", "", &url])
             .spawn()
             .map_err(|e| format!("打开默认浏览器失败: {}", e))?;
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         // macOS: 使用Safari的私密浏览模式
@@ -2329,7 +2330,7 @@ pub async fn open_incognito_browser(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("打开Safari私密浏览失败: {}", e))?;
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         // Linux: 尝试不同的浏览器
@@ -2338,7 +2339,7 @@ pub async fn open_incognito_browser(url: String) -> Result<(), String> {
             ("chromium", "--incognito"),
             ("firefox", "--private-window"),
         ];
-        
+
         for (browser, flag) in browsers {
             if Command::new("which").arg(browser).output().is_ok() {
                 Command::new(browser)
@@ -2349,13 +2350,397 @@ pub async fn open_incognito_browser(url: String) -> Result<(), String> {
                 return Ok(());
             }
         }
-        
+
         // 使用xdg-open作为后备选项
         Command::new("xdg-open")
             .arg(&url)
             .spawn()
             .map_err(|e| format!("打开默认浏览器失败: {}", e))?;
     }
-    
+
     Ok(())
+}
+
+/// Verdent 客户端登录响应
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerdentClientLoginResponse {
+    pub success: bool,
+    pub error: Option<String>,
+    pub new_machine_guid: Option<String>,
+}
+
+/// 一键登录到 Verdent 客户端
+/// 使用账户的 token 直接登录到本地 Verdent 客户端
+///
+/// 功能包括:
+/// 1. 将 Token 写入 Verdent 客户端配置 (Windows Credential Manager / macOS Keychain / Linux 配置文件)
+/// 2. 重置机器码 (仅 Windows)
+/// 3. 重启 Verdent 客户端
+#[tauri::command]
+pub async fn login_to_verdent_client(token: String) -> Result<VerdentClientLoginResponse, String> {
+    println!("\n[*] ========== 一键登录到 Verdent 客户端 ==========");
+    println!("[*] Token 长度: {} 字符", token.len());
+
+    let mut manager = VerdentClientManager::new();
+
+    // 获取用户自定义的 Verdent.exe 路径
+    let custom_path = match SettingsManager::new() {
+        Ok(settings_mgr) => {
+            match settings_mgr.load() {
+                Ok(settings) => {
+                    println!("[*] 从配置文件读取到的路径: {:?}", settings.verdent_exe_path);
+                    settings.verdent_exe_path
+                },
+                Err(e) => {
+                    println!("[!] 加载配置文件失败: {}", e);
+                    None
+                }
+            }
+        },
+        Err(e) => {
+            println!("[!] 初始化设置管理器失败: {}", e);
+            None
+        }
+    };
+
+    println!("[*] 将使用的自定义路径: {:?}", custom_path);
+
+    // 步骤 1: 检查 Verdent 客户端是否安装
+    println!("[*] 检查 Verdent 客户端安装...");
+    if let Err(e) = manager.find_verdent_path(custom_path.as_deref()) {
+        eprintln!("[×] 未找到 Verdent 客户端: {}", e);
+        return Ok(VerdentClientLoginResponse {
+            success: false,
+            error: Some(format!("未找到 Verdent 客户端。请确保已安装 Verdent 桌面应用，或者设置 Verdent.exe 的正确位置。\n错误: {}", e)),
+            new_machine_guid: None,
+        });
+    }
+
+    // 步骤 2: 解析 Token 获取过期时间
+    println!("[*] 解析 Token...");
+    let expire_at = match jwt_utils::parse_jwt_payload(&token) {
+        Ok(payload) => {
+            if let Some(exp) = payload.exp {
+                // JWT exp 是秒级时间戳,需要转换为毫秒
+                exp * 1000
+            } else {
+                // 如果没有过期时间,默认设置为 30 天后
+                chrono::Utc::now().timestamp_millis() + (30 * 24 * 60 * 60 * 1000)
+            }
+        },
+        Err(e) => {
+            eprintln!("[!] 解析 Token 失败,使用默认过期时间: {}", e);
+            // 默认 30 天后过期
+            chrono::Utc::now().timestamp_millis() + (30 * 24 * 60 * 60 * 1000)
+        }
+    };
+
+    println!("[*] Token 过期时间: {}", expire_at);
+
+    // 步骤 3: 写入 Token 到客户端配置
+    println!("[*] 写入 Token 到 Verdent 客户端配置...");
+    if let Err(e) = manager.write_token(&token, expire_at) {
+        eprintln!("[×] 写入 Token 失败: {}", e);
+
+        // 检查是否是权限问题
+        let error_msg = if e.to_string().contains("需要管理员权限") || e.to_string().contains("Permission") {
+            "写入凭证失败:需要管理员权限。\n\n请以管理员身份运行本程序。".to_string()
+        } else {
+            format!("写入 Token 失败: {}", e)
+        };
+
+        return Ok(VerdentClientLoginResponse {
+            success: false,
+            error: Some(error_msg),
+            new_machine_guid: None,
+        });
+    }
+
+    // 步骤 4: 重置机器码 (仅 Windows)
+    let new_machine_guid = if cfg!(target_os = "windows") {
+        println!("[*] 重置机器码...");
+        match manager.reset_machine_guid() {
+            Ok(guid) => {
+                println!("[✓] 机器码已重置: {}", guid);
+                Some(guid)
+            },
+            Err(e) => {
+                eprintln!("[!] 重置机器码失败: {}", e);
+
+                // 机器码重置失败不影响登录,只是警告
+                if e.to_string().contains("需要管理员权限") || e.to_string().contains("Permission") {
+                    println!("[!] 跳过机器码重置 (需要管理员权限)");
+                } else {
+                    println!("[!] 跳过机器码重置: {}", e);
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // 步骤 5: 重启 Verdent 客户端
+    println!("[*] 重启 Verdent 客户端...");
+    if let Err(e) = manager.restart_verdent() {
+        eprintln!("[×] 重启 Verdent 失败: {}", e);
+        return Ok(VerdentClientLoginResponse {
+            success: false,
+            error: Some(format!("Token 已写入,但重启 Verdent 失败: {}\n\n请手动重启 Verdent 客户端。", e)),
+            new_machine_guid,
+        });
+    }
+
+    println!("[✓] Verdent 客户端登录完成!");
+    println!("======================================\n");
+
+    Ok(VerdentClientLoginResponse {
+        success: true,
+        error: None,
+        new_machine_guid,
+    })
+}
+
+
+// ============================================================================
+// 管理员权限管理命令
+// ============================================================================
+
+/// 检查是否有管理员权限
+#[tauri::command]
+pub async fn check_admin_privileges() -> Result<bool, String> {
+    Ok(crate::admin_helper::is_running_as_admin())
+}
+
+/// 请求管理员权限并重启应用
+#[tauri::command]
+pub async fn request_admin_privileges() -> Result<(), String> {
+    crate::admin_helper::restart_as_admin()
+}
+
+/// 创建开机自启动任务（以管理员权限）
+#[tauri::command]
+pub async fn setup_admin_autostart() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        if !crate::admin_helper::is_running_as_admin() {
+            return Err("需要管理员权限来创建任务计划".to_string());
+        }
+        
+        crate::admin_helper::create_admin_task("VerdentAccountManager")
+            .map_err(|e| format!("创建自启动任务失败: {}", e))
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(())
+    }
+}
+
+/// 移除开机自启动任务
+#[tauri::command]
+pub async fn remove_admin_autostart() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::admin_helper::remove_admin_task("VerdentAccountManager")
+            .map_err(|e| format!("移除自启动任务失败: {}", e))
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Verdent.exe 路径管理命令
+// ============================================================================
+
+/// 选择并保存 Verdent.exe 路径
+/// 注意：需要在前端调用文件选择对话框，然后将路径传递给这个命令
+#[tauri::command]
+pub async fn select_verdent_exe_path(path: Option<String>) -> Result<Option<String>, String> {
+    println!("[*] 处理 Verdent.exe 路径选择...");
+    
+    match path {
+        Some(file_path) => {
+            println!("[✓] 用户选择了: {}", file_path);
+            
+            // 验证文件是否存在
+            let path_buf = std::path::PathBuf::from(&file_path);
+            if !path_buf.exists() {
+                return Err("选择的文件不存在".to_string());
+            }
+            
+            // 验证文件名是否为 Verdent.exe
+            if !path_buf.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.eq_ignore_ascii_case("Verdent.exe"))
+                .unwrap_or(false) {
+                return Err("请选择 Verdent.exe 文件".to_string());
+            }
+            
+            // 保存到设置
+            match SettingsManager::new() {
+                Ok(settings_mgr) => {
+                    if let Err(e) = settings_mgr.update_verdent_exe_path(Some(file_path.clone())) {
+                        return Err(format!("保存路径失败: {}", e));
+                    }
+                    println!("[✓] 路径已保存到设置");
+                },
+                Err(e) => {
+                    return Err(format!("初始化设置管理器失败: {}", e));
+                }
+            }
+            
+            Ok(Some(file_path))
+        },
+        None => {
+            println!("[!] 用户未选择文件");
+            Ok(None)
+        }
+    }
+}
+
+/// 获取当前保存的 Verdent.exe 路径
+#[tauri::command]
+pub async fn get_verdent_exe_path() -> Result<Option<String>, String> {
+    match SettingsManager::new() {
+        Ok(settings_mgr) => {
+            match settings_mgr.load() {
+                Ok(settings) => Ok(settings.verdent_exe_path),
+                Err(e) => Err(format!("加载设置失败: {}", e))
+            }
+        },
+        Err(e) => Err(format!("初始化设置管理器失败: {}", e))
+    }
+}
+
+/// 清除保存的 Verdent.exe 路径
+#[tauri::command]
+pub async fn clear_verdent_exe_path() -> Result<(), String> {
+    match SettingsManager::new() {
+        Ok(settings_mgr) => {
+            if let Err(e) = settings_mgr.update_verdent_exe_path(None) {
+                return Err(format!("清除路径失败: {}", e));
+            }
+            Ok(())
+        },
+        Err(e) => Err(format!("初始化设置管理器失败: {}", e))
+    }
+}
+
+/// 调试命令：打印完整的配置文件内容
+#[tauri::command]
+pub async fn debug_print_settings() -> Result<String, String> {
+    println!("\n[DEBUG] ========== 打印完整配置文件 ==========");
+
+    match SettingsManager::new() {
+        Ok(settings_mgr) => {
+            match settings_mgr.load() {
+                Ok(settings) => {
+                    let json = serde_json::to_string_pretty(&settings)
+                        .map_err(|e| format!("序列化失败: {}", e))?;
+
+                    println!("{}", json);
+                    println!("==============================================\n");
+
+                    Ok(json)
+                },
+                Err(e) => Err(format!("加载配置失败: {}", e))
+            }
+        },
+        Err(e) => Err(format!("初始化设置管理器失败: {}", e))
+    }
+}
+
+/// 检查 Verdent.exe 是否可用
+#[tauri::command]
+pub async fn check_verdent_exe_available() -> Result<bool, String> {
+    println!("[*] 检查 Verdent.exe 是否可用...");
+
+    let mut manager = VerdentClientManager::new();
+
+    // 获取用户自定义的路径
+    let custom_path = match SettingsManager::new() {
+        Ok(settings_mgr) => {
+            match settings_mgr.load() {
+                Ok(settings) => {
+                    println!("[*] 从配置文件读取到的路径: {:?}", settings.verdent_exe_path);
+                    settings.verdent_exe_path
+                },
+                Err(e) => {
+                    println!("[!] 加载配置文件失败: {}", e);
+                    None
+                }
+            }
+        },
+        Err(e) => {
+            println!("[!] 初始化设置管理器失败: {}", e);
+            None
+        }
+    };
+
+    println!("[*] 将使用的自定义路径: {:?}", custom_path);
+
+    // 尝试查找 Verdent.exe
+    match manager.find_verdent_path(custom_path.as_deref()) {
+        Ok(path) => {
+            println!("[✓] 找到 Verdent.exe: {:?}", path);
+            Ok(true)
+        },
+        Err(e) => {
+            println!("[×] 未找到 Verdent.exe: {}", e);
+            Ok(false)
+        }
+    }
+}
+
+// ============================================================================
+// 机器码管理命令
+// ============================================================================
+
+/// 获取机器码信息
+#[tauri::command]
+pub async fn get_machine_guid_info() -> Result<crate::machine_guid::MachineGuidInfo, String> {
+    use crate::machine_guid::MachineGuidManager;
+
+    let manager = MachineGuidManager::new()?;
+    manager.get_info()
+}
+
+/// 备份当前机器码
+#[tauri::command]
+pub async fn backup_machine_guid() -> Result<String, String> {
+    use crate::machine_guid::MachineGuidManager;
+
+    let manager = MachineGuidManager::new()?;
+    manager.backup_current_guid()
+}
+
+/// 重置机器码为新的随机 GUID
+#[tauri::command]
+pub async fn reset_machine_guid() -> Result<String, String> {
+    use crate::machine_guid::MachineGuidManager;
+
+    let manager = MachineGuidManager::new()?;
+    manager.reset_to_new_guid()
+}
+
+/// 恢复备份的机器码
+#[tauri::command]
+pub async fn restore_machine_guid() -> Result<String, String> {
+    use crate::machine_guid::MachineGuidManager;
+
+    let manager = MachineGuidManager::new()?;
+    manager.restore_backup_guid()
+}
+
+/// 删除机器码备份
+#[tauri::command]
+pub async fn delete_machine_guid_backup() -> Result<(), String> {
+    use crate::machine_guid::MachineGuidManager;
+
+    let manager = MachineGuidManager::new()?;
+    manager.delete_backup()
 }

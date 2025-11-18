@@ -648,8 +648,27 @@ async function loadUserSettings() {
 // 保存用户设置
 async function saveUserSettings() {
   try {
+    // 先加载完整的现有配置，避免覆盖其他字段（如 verdent_exe_path）
+    const existingSettings = await invoke<{
+      current_account_id: string | null
+      email_privacy_mode: boolean
+      selected_accounts: string[]
+      filter_type: string | null
+      import_mode: string
+      export_format: string
+      register_count: number
+      register_max_workers: number
+      register_password: string
+      register_use_random_password: boolean
+      register_headless: boolean
+      verdent_exe_path: string | null
+      last_updated: string
+    }>('get_user_settings')
+
+    // 只更新当前组件管理的字段，保留其他字段（如 verdent_exe_path）
     await invoke('save_user_settings', {
       settings: {
+        ...existingSettings,  // 保留所有现有字段
         current_account_id: currentAccountId.value || null,
         email_privacy_mode: emailPrivacyMode.value,
         selected_accounts: Array.from(selectedAccounts.value),
@@ -664,6 +683,8 @@ async function saveUserSettings() {
         last_updated: new Date().toISOString()
       }
     })
+
+    console.log('[AccountManager] ✓ 用户设置已保存（保留了 verdent_exe_path）')
   } catch (error) {
     console.error('保存用户设置失败:', error)
   }

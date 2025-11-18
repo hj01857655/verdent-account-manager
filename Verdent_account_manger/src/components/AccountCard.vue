@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { open, confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 
 interface Account {
   id: string
@@ -228,8 +229,8 @@ function handleDelete() {
 function handleCardClick(event: MouseEvent) {
   // 如果点击的是按钮、输入框或其他交互元素，不触发选择
   const target = event.target as HTMLElement
-  const isInteractive = target.closest('button, input, textarea, a, .action-btn, .login-btn, .test-login-btn, .copy-btn, .status-badge, .subscription-badge')
-  
+  const isInteractive = target.closest('button, input, textarea, a, .action-btn, .login-btn, .verdent-client-btn, .test-login-btn, .copy-btn, .status-badge, .subscription-badge')
+
   if (!isInteractive) {
     // 阻止事件冒泡，避免触发其他点击事件
     event.stopPropagation()
@@ -240,6 +241,7 @@ function handleCardClick(event: MouseEvent) {
 const loginLoading = ref(false)
 const loginWindsurfLoading = ref(false)
 const loginCursorLoading = ref(false)
+const loginVerdentClientLoading = ref(false)
 const testLoginLoading = ref(false)
 
 async function handleTestLogin() {
@@ -361,6 +363,203 @@ async function handleLoginCursor() {
     emit('showToast', `登录失败: ${error}`, 'error')
   } finally {
     loginCursorLoading.value = false
+  }
+}
+
+async function handleLoginVerdentClient(skipConfirm = false) {
+  if (!props.account.token) {
+    console.error('该账户没有 Token,无法登录')
+    emit('showToast', '该账户没有 Token,无法登录到 Verdent 客户端', 'error')
+    return
+  }
+
+  try {
+    loginVerdentClientLoading.value = true
+
+    // 步骤 1: 检查管理员权限
+    try {
+      const hasAdmin = await invoke<boolean>('check_admin_privileges')
+
+      if (!hasAdmin) {
+        loginVerdentClientLoading.value = false // 暂时关闭加载状态，显示对话框
+
+        // 权限不足，提示用户
+        const shouldElevate = await tauriConfirm(
+          '⚠️ 需要管理员权限\n\n' +
+          '登录到 Verdent 客户端需要:\n' +
+          '• 写入 Windows 凭据管理器\n' +
+          '• 修改系统注册表 (HKLM)\n' +
+          '• 重启 Verdent 客户端进程\n\n' +
+          '是否以管理员身份重启应用？\n\n' +
+          '注意：\n' +
+          '• 重启后将保留所有账号数据\n' +
+          '• 您需要在 UAC 提示中点击"是"',
+          {
+            title: '🔒 需要管理员权限',
+            kind: 'warning'
+          }
+        )
+
+        if (!shouldElevate) {
+          emit('showToast', '已取消操作', 'info')
+          return
+        }
+
+        // 请求权限提升
+        try {
+          emit('showToast', '正在请求管理员权限...', 'info')
+          await invoke('request_admin_privileges')
+          // 如果成功，应用会重启，不会执行到这里
+        } catch (error) {
+          emit('showToast', `权限提升失败: ${error}\n\n请手动以管理员身份运行应用`, 'error')
+          return
+        }
+      }
+    } catch (error) {
+      console.error('检查权限失败:', error)
+      emit('showToast', `检查权限失败: ${error}`, 'error')
+      return
+    }
+
+    // 步骤 2: 检查 Verdent.exe 是否可用
+    const isAvailable = await invoke<boolean>('check_verdent_exe_available')
+
+    if (!isAvailable) {
+      // 如果找不到 Verdent.exe，提示用户选择
+      console.log('未找到 Verdent.exe，提示用户选择')
+
+      const confirmSelect = await tauriConfirm(
+        '请确保已安装 Verdent 桌面应用，然后选择 Verdent.exe 文件的位置。\n\n是否现在选择 Verdent.exe 文件？',
+        {
+          title: '未找到 Verdent 客户端',
+          kind: 'warning'
+        }
+      )
+
+      if (confirmSelect) {
+        // 打开文件选择对话框
+        const selected = await open({
+          title: '选择 Verdent.exe 文件',
+          filters: [{
+            name: '可执行文件',
+            extensions: ['exe']
+          }]
+        })
+
+        if (!selected) {
+          console.log('用户取消了选择')
+          emit('showToast', '已取消选择 Verdent.exe', 'info')
+          return
+        }
+
+        // 将选择的路径保存到设置
+        const selectedPath = await invoke<string | null>('select_verdent_exe_path', {
+          path: selected
+        })
+
+        if (!selectedPath) {
+          return
+        }
+
+        console.log('用户选择了 Verdent.exe:', selectedPath)
+        emit('showToast', `已设置 Verdent.exe 位置: ${selectedPath}`, 'success')
+
+        // 路径设置成功后，跳过确认直接执行登录
+        skipConfirm = true
+      } else {
+        return
+      }
+    }
+
+    // 步骤 3: 显示确认对话框（除非是递归调用）
+    if (!skipConfirm) {
+      const confirmLogin = await tauriConfirm(
+        '此操作将:\n' +
+        '1. 写入 Token 到 Windows 凭据管理器\n' +
+        '2. 生成新的随机机器码并写入注册表\n' +
+        '3. 重启 Verdent 客户端\n\n' +
+        '⚠️ 注意:\n' +
+        '- 如果尚未备份,系统会自动备份当前机器码\n' +
+        '- 会关闭当前运行的 Verdent 客户端\n\n' +
+        '是否继续?',
+        {
+          title: '⚠️ 登录到 Verdent 客户端',
+          kind: 'warning'
+        }
+      )
+
+      if (!confirmLogin) {
+        emit('showToast', '已取消登录操作', 'info')
+        return
+      }
+    }
+
+    // 调用后端命令进行登录到 Verdent 客户端
+    const result = await invoke<{
+      success: boolean
+      error?: string
+      new_machine_guid?: string
+    }>('login_to_verdent_client', {
+      token: props.account.token
+    })
+
+    if (result.success) {
+      console.log('✅ 已成功登录到 Verdent 客户端')
+
+      let message = '✅ 已成功登录到 Verdent 客户端'
+      if (result.new_machine_guid) {
+        message += `\n🔑 机器码已重置: ${result.new_machine_guid.substring(0, 8)}...`
+      }
+      message += '\n🔄 Verdent 客户端已自动重启'
+
+      emit('showToast', message, 'success')
+      // 设置为当前使用的账号
+      emit('setCurrent', props.account.id)
+    } else {
+      console.error(`❌ 登录失败: ${result.error || '未知错误'}`)
+      
+      // 如果错误信息包含"未找到 Verdent 客户端"，再次提示用户选择
+      if (result.error && result.error.includes('未找到 Verdent 客户端')) {
+        const tryAgain = await tauriConfirm(
+          `${result.error}\n\n是否选择 Verdent.exe 文件位置并重试？`,
+          {
+            title: '错误',
+            kind: 'error'
+          }
+        )
+
+        if (tryAgain) {
+          // 打开文件选择对话框
+          const selected = await open({
+            title: '选择 Verdent.exe 文件',
+            filters: [{
+              name: '可执行文件',
+              extensions: ['exe']
+            }]
+          })
+
+          if (selected) {
+            // 保存选择的路径
+            const selectedPath = await invoke<string | null>('select_verdent_exe_path', {
+              path: selected
+            })
+
+            if (selectedPath) {
+              // 递归调用自己重试（跳过确认框）
+              await handleLoginVerdentClient(true)
+              return
+            }
+          }
+        }
+      }
+
+      emit('showToast', `登录到 Verdent 客户端失败:\n${result.error || '未知错误'}`, 'error')
+    }
+  } catch (error) {
+    console.error('登录到 Verdent 客户端失败:', error)
+    emit('showToast', `登录到 Verdent 客户端失败: ${error}`, 'error')
+  } finally {
+    loginVerdentClientLoading.value = false
   }
 }
 </script>
@@ -489,8 +688,7 @@ async function handleLoginCursor() {
           :disabled="!account.token || loginLoading"
           title="使用 Token 登录到 VS Code"
         >
-          <img v-if="!loginLoading" src="/vscode.svg" alt="VS Code" class="btn-icon" />
-          <span class="btn-text">{{ loginLoading ? '登录中' : 'VS Code' }}</span>
+          <img src="/vscode.svg" alt="VS Code" class="btn-icon" :class="{ 'loading-spin': loginLoading }" />
         </button>
 
         <!-- Windsurf 登录按钮 -->
@@ -500,8 +698,7 @@ async function handleLoginCursor() {
           :disabled="!account.token || loginWindsurfLoading"
           title="使用 Token 登录到 Windsurf"
         >
-          <img v-if="!loginWindsurfLoading" src="/windsurf.svg" alt="Windsurf" class="btn-icon" />
-          <span class="btn-text">{{ loginWindsurfLoading ? '登录中' : 'Windsurf' }}</span>
+          <img src="/windsurf.svg" alt="Windsurf" class="btn-icon" :class="{ 'loading-spin': loginWindsurfLoading }" />
         </button>
 
         <!-- Cursor 登录按钮 -->
@@ -511,8 +708,17 @@ async function handleLoginCursor() {
           :disabled="!account.token || loginCursorLoading"
           title="使用 Token 登录到 Cursor"
         >
-          <img v-if="!loginCursorLoading" src="/cursor.svg" alt="Cursor" class="btn-icon" />
-          <span class="btn-text">{{ loginCursorLoading ? '登录中' : 'Cursor' }}</span>
+          <img src="/cursor.svg" alt="Cursor" class="btn-icon" :class="{ 'loading-spin': loginCursorLoading }" />
+        </button>
+
+        <!-- Verdent 客户端登录按钮 -->
+        <button
+          class="login-btn verdent-client-btn"
+          @click="handleLoginVerdentClient"
+          :disabled="!account.token || loginVerdentClientLoading"
+          title="使用 Token 登录到 Verdent 客户端 (自动写入凭证、重置机器码、重启软件)"
+        >
+          <img src="/verdent.svg" alt="Verdent" class="btn-icon" :class="{ 'loading-spin': loginVerdentClientLoading }" />
         </button>
 
         <!-- 密码登录按钮 -->
@@ -522,8 +728,7 @@ async function handleLoginCursor() {
           :disabled="testLoginLoading"
           title="使用邮箱密码登录并更新 Token"
         >
-          <img v-if="!testLoginLoading" src="/账密登录.svg" alt="密码登录" class="btn-icon" />
-          <span class="btn-text">{{ testLoginLoading ? '登录中' : '密码登录' }}</span>
+          <img src="/账密登录.svg" alt="密码登录" class="btn-icon" :class="{ 'loading-spin': testLoginLoading }" />
         </button>
       </div>
     </div>
@@ -823,8 +1028,8 @@ async function handleLoginCursor() {
 
 .test-login-btn,
 .login-btn {
-  flex: 1;
-  padding: 5px 6px;
+  flex: 0 0 auto;
+  padding: 6px;
   border: 1px solid #d2d2d7;
   border-radius: 6px;
   background: white;
@@ -838,7 +1043,8 @@ async function handleLoginCursor() {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-height: 26px;
+  width: 32px;
+  height: 32px;
   position: relative;
 }
 
@@ -858,15 +1064,21 @@ async function handleLoginCursor() {
 
 
 .btn-icon {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   object-fit: contain;
   flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+.btn-icon.loading-spin {
+  animation: rotate 1s linear infinite;
 }
 
 .btn-text {
   font-size: 10px;
   line-height: 1;
+  display: none; /* 隐藏文字 */
 }
 
 .action-icon {
@@ -917,6 +1129,11 @@ async function handleLoginCursor() {
 .login-btn.cursor-btn:hover:not(:disabled) {
   background: #e8f5e8;
   border-color: #34c759;
+}
+
+.login-btn.verdent-client-btn:hover:not(:disabled) {
+  background: #f3e8ff;
+  border-color: #af52de;
 }
 
 /* 点击效果 */

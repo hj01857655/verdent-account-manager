@@ -1,13 +1,16 @@
 mod account_manager;
+mod admin_helper;
 mod api;
 mod commands;
 mod errors;
 mod jwt_utils;
+mod machine_guid;
 mod models;
 mod pkce;
 mod proxy_manager;
 mod settings_manager;
 mod storage;
+mod verdent_client;
 mod vscode_storage;
 
 use commands::*;
@@ -16,6 +19,7 @@ use commands::*;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|#[allow(unused_variables)] app| {
             // 在生产环境中完全禁用 DevTools
             #[cfg(not(debug_assertions))]
@@ -81,6 +85,7 @@ pub fn run() {
             login_to_vscode,
             login_to_windsurf,
             login_to_cursor,
+            login_to_verdent_client,
             refresh_account_info,
             open_storage_folder,
             test_login_and_update,
@@ -97,6 +102,20 @@ pub fn run() {
             save_proxy_settings,
             get_trial_checkout_url,
             open_incognito_browser,
+            get_machine_guid_info,
+            backup_machine_guid,
+            reset_machine_guid,
+            restore_machine_guid,
+            delete_machine_guid_backup,
+            select_verdent_exe_path,
+            get_verdent_exe_path,
+            clear_verdent_exe_path,
+            check_verdent_exe_available,
+            check_admin_privileges,
+            request_admin_privileges,
+            setup_admin_autostart,
+            remove_admin_autostart,
+            debug_print_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

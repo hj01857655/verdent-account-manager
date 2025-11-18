@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
+import { open, confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import AccountManager from './components/AccountManager.vue'
 import Toast from './components/Toast.vue'
 
@@ -40,7 +41,15 @@ interface VSCodeIdsInfo {
   error: string | null
 }
 
+interface MachineGuidInfo {
+  current_guid: string | null
+  backup_guid: string | null
+  has_backup: boolean
+  platform: string
+}
+
 const activeTab = ref<'login' | 'reset' | 'accounts'>('accounts')
+const debugSettings = ref('')  // 调试：配置文件内容
 const token = ref('')
 const deviceId = ref('python-auto-login')
 const appVersion = ref('1.0.9')
@@ -56,6 +65,13 @@ const showProxySettings = ref(false)
 const proxyUrl = ref('')
 const proxyEnabled = ref(false)
 
+// 机器码管理相关状态
+const machineGuidInfo = ref<MachineGuidInfo | null>(null)
+const machineGuidLoading = ref(false)
+
+// Verdent.exe 路径管理
+const verdentExePath = ref<string | null>(null)
+
 // Toast 相关状态
 const showToast = ref(false)
 const toastMessage = ref('')
@@ -65,6 +81,23 @@ onMounted(async () => {
   await loadStorageInfo()
   await loadVSCodeIds()
   await loadProxySettings()
+  await loadMachineGuidInfo()
+  await loadVerdentExePath()
+  
+  // 检查管理员权限（仅Windows）
+  try {
+    const hasAdmin = await invoke<boolean>('check_admin_privileges')
+    console.log('管理员权限状态:', hasAdmin)
+    
+    // 如果没有管理员权限，可以在这里提示用户
+    if (!hasAdmin) {
+      console.warn('应用未以管理员权限运行，某些功能可能受限')
+      // 可选：显示一个提示信息
+      // displayToast('提示：以管理员身份运行可获得完整功能', 'info')
+    }
+  } catch (error) {
+    console.error('检查管理员权限失败:', error)
+  }
   
   // 获取管理器版本号
   try {
@@ -72,7 +105,8 @@ onMounted(async () => {
     managerVersion.value = version
   } catch (error) {
     console.error('获取版本号失败:', error)
-    // 保持默认值 1.3.0
+    // 保持默认值 1.4.0
+    managerVersion.value = '1.4.0'
   }
   
   // 获取账号存储路径
@@ -172,6 +206,18 @@ async function loadStorageInfo() {
     storageInfo.value = await invoke<StorageInfo>('get_storage_info')
   } catch (error) {
     console.error('加载存储信息失败:', error)
+  }
+}
+
+async function handleDebugSettings() {
+  try {
+    const settings = await invoke<string>('debug_print_settings')
+    debugSettings.value = settings
+    console.log('配置文件内容:', settings)
+    showMessage('success', '配置文件内容已打印到控制台')
+  } catch (error) {
+    console.error('获取配置失败:', error)
+    showMessage('error', `获取配置失败: ${error}`)
   }
 }
 
@@ -374,6 +420,236 @@ function handleProxyToggle() {
   if (!proxyEnabled.value) {
     // 可选：清空代理地址
     // proxyUrl.value = ''
+  }
+}
+
+// 机器码管理函数
+async function loadMachineGuidInfo() {
+  try {
+    machineGuidInfo.value = await invoke<MachineGuidInfo>('get_machine_guid_info')
+  } catch (error) {
+    console.error('加载机器码信息失败:', error)
+  }
+}
+
+// Verdent.exe 路径管理函数
+async function loadVerdentExePath() {
+  try {
+    verdentExePath.value = await invoke<string | null>('get_verdent_exe_path')
+  } catch (error) {
+    console.error('加载 Verdent.exe 路径失败:', error)
+  }
+}
+
+async function selectVerdentExePath() {
+  try {
+    // 打开文件选择对话框
+    const selected = await open({
+      title: '选择 Verdent.exe 文件',
+      filters: [{
+        name: '可执行文件',
+        extensions: ['exe']
+      }]
+    })
+    
+    if (!selected) {
+      console.log('用户取消了选择')
+      return
+    }
+    
+    // 将选择的路径保存到设置
+    const path = await invoke<string | null>('select_verdent_exe_path', {
+      path: selected
+    })
+    
+    if (path) {
+      verdentExePath.value = path
+      displayToast(`已设置 Verdent.exe 路径: ${path}`, 'success')
+    }
+  } catch (error) {
+    console.error('选择 Verdent.exe 路径失败:', error)
+    displayToast(`选择文件失败: ${error}`, 'error')
+  }
+}
+
+async function clearVerdentExePath() {
+  try {
+    await invoke('clear_verdent_exe_path')
+    verdentExePath.value = null
+    displayToast('已清除 Verdent.exe 路径，将使用默认路径', 'success')
+  } catch (error) {
+    console.error('清除 Verdent.exe 路径失败:', error)
+    displayToast(`清除路径失败: ${error}`, 'error')
+  }
+}
+
+async function handleBackupMachineGuid() {
+  const confirmed = await tauriConfirm(
+    '备份后可以随时恢复到当前的机器码。',
+    {
+      title: '确认备份当前机器码?',
+      kind: 'info'
+    }
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  machineGuidLoading.value = true
+  try {
+    const guid = await invoke<string>('backup_machine_guid')
+    showMessage('success', `机器码已备份: ${guid}`)
+    await loadMachineGuidInfo()
+  } catch (error) {
+    showMessage('error', `备份失败: ${error}`)
+  } finally {
+    machineGuidLoading.value = false
+  }
+}
+
+async function handleResetMachineGuid() {
+  // 步骤 1: 检查管理员权限
+  try {
+    const hasAdmin = await invoke<boolean>('check_admin_privileges')
+
+    if (!hasAdmin) {
+      // 权限不足，提示用户
+      const shouldElevate = await tauriConfirm(
+        '⚠️ 需要管理员权限\n\n' +
+        '修改机器码需要写入系统注册表 (HKLM)，需要管理员权限。\n\n' +
+        '是否以管理员身份重启应用？\n\n' +
+        '注意：\n' +
+        '• 重启后将保留所有账号数据\n' +
+        '• 您需要在 UAC 提示中点击"是"',
+        {
+          title: '🔒 需要管理员权限',
+          kind: 'warning'
+        }
+      )
+
+      if (!shouldElevate) {
+        showMessage('info', '已取消操作')
+        return
+      }
+
+      // 请求权限提升
+      try {
+        showMessage('info', '正在请求管理员权限...')
+        await invoke('request_admin_privileges')
+        // 如果成功，应用会重启，不会执行到这里
+      } catch (error) {
+        showMessage('error', `权限提升失败: ${error}\n\n请手动以管理员身份运行应用`)
+        return
+      }
+    }
+  } catch (error) {
+    console.error('检查权限失败:', error)
+    showMessage('error', `检查权限失败: ${error}`)
+    return
+  }
+
+  // 步骤 2: 确认操作
+  const confirmed = await tauriConfirm(
+    '此操作将:\n1. 生成新的随机机器码\n2. 写入系统注册表\n\n注意: 如果尚未备份,系统会自动备份当前机器码。\n\n是否继续?',
+    {
+      title: '⚠️ 重置机器码',
+      kind: 'warning'
+    }
+  )
+
+  if (!confirmed) {
+    showMessage('info', '已取消重置操作')
+    return
+  }
+
+  // 步骤 3: 执行重置
+  machineGuidLoading.value = true
+  try {
+    const newGuid = await invoke<string>('reset_machine_guid')
+    showMessage('success', `✓ 机器码已重置为: ${newGuid}`)
+    await loadMachineGuidInfo()
+  } catch (error) {
+    showMessage('error', `重置失败: ${error}`)
+  } finally {
+    machineGuidLoading.value = false
+  }
+}
+
+async function handleRestoreMachineGuid() {
+  // 步骤 1: 检查管理员权限
+  try {
+    const hasAdmin = await invoke<boolean>('check_admin_privileges')
+
+    if (!hasAdmin) {
+      // 权限不足，提示用户
+      const shouldElevate = await tauriConfirm(
+        '⚠️ 需要管理员权限\n\n' +
+        '恢复机器码需要写入系统注册表 (HKLM)，需要管理员权限。\n\n' +
+        '是否以管理员身份重启应用？\n\n' +
+        '注意：\n' +
+        '• 重启后将保留所有账号数据\n' +
+        '• 您需要在 UAC 提示中点击"是"',
+        {
+          title: '🔒 需要管理员权限',
+          kind: 'warning'
+        }
+      )
+
+      if (!shouldElevate) {
+        showMessage('info', '已取消操作')
+        return
+      }
+
+      // 请求权限提升
+      try {
+        showMessage('info', '正在请求管理员权限...')
+        await invoke('request_admin_privileges')
+        // 如果成功，应用会重启，不会执行到这里
+      } catch (error) {
+        showMessage('error', `权限提升失败: ${error}\n\n请手动以管理员身份运行应用`)
+        return
+      }
+    }
+  } catch (error) {
+    console.error('检查权限失败:', error)
+    showMessage('error', `检查权限失败: ${error}`)
+    return
+  }
+
+  // 步骤 2: 确认操作
+  const confirmed = await tauriConfirm(
+    '这将把机器码恢复为首次备份时的原始值。',
+    {
+      title: '确认恢复到备份的机器码?',
+      kind: 'warning'
+    }
+  )
+
+  if (!confirmed) {
+    showMessage('info', '已取消恢复操作')
+    return
+  }
+
+  // 步骤 3: 执行恢复
+  machineGuidLoading.value = true
+  try {
+    const guid = await invoke<string>('restore_machine_guid')
+    showMessage('success', `✓ 机器码已恢复为: ${guid}`)
+    await loadMachineGuidInfo()
+  } catch (error) {
+    showMessage('error', `恢复失败: ${error}`)
+  } finally {
+    machineGuidLoading.value = false
+  }
+}
+
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    showMessage('success', '已复制到剪贴板')
+  } catch (error) {
+    showMessage('error', '复制失败')
   }
 }
 </script>
@@ -595,11 +871,164 @@ function handleProxyToggle() {
 
         <div class="divider"></div>
 
+        <!-- 机器码管理部分 -->
+        <div class="machine-guid-container">
+          <h3 class="section-title">
+            <img src="/盾牌.svg" alt="盾牌" class="section-icon" width="20" height="20" />
+            机器码管理
+          </h3>
+
+          <div v-if="machineGuidInfo?.platform === 'Windows'" class="machine-guid-section">
+            <!-- 当前机器码卡片 -->
+            <div class="guid-card primary-card">
+              <div class="card-header">
+                <div class="card-title">
+                  <img src="/机器码.svg" alt="机器码" class="card-icon" width="16" height="16" />
+                  <span>当前机器码</span>
+                </div>
+                <span class="card-badge">Windows 注册表 MachineGuid</span>
+              </div>
+              <div class="card-body">
+                <div class="guid-display">
+                  <input
+                    :value="machineGuidInfo?.current_guid || '读取失败'"
+                    type="text"
+                    class="guid-input primary"
+                    readonly
+                  />
+                  <button
+                    v-if="machineGuidInfo?.current_guid"
+                    class="copy-btn-modern"
+                    @click="copyToClipboard(machineGuidInfo.current_guid)"
+                    title="复制机器码"
+                  >
+                    <img src="/复制.svg" alt="复制" class="copy-icon" width="18" height="18" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 备份机器码卡片（如果存在） -->
+            <div v-if="machineGuidInfo?.has_backup" class="guid-card backup-card">
+              <div class="card-header">
+                <div class="card-title">
+                  <img src="/备份.svg" alt="备份" class="card-icon" width="16" height="16" />
+                  <span>备份机器码</span>
+                </div>
+                <span class="card-badge backup">首次备份的原始机器码</span>
+              </div>
+              <div class="card-body">
+                <div class="guid-display">
+                  <input
+                    :value="machineGuidInfo?.backup_guid || '无'"
+                    type="text"
+                    class="guid-input backup"
+                    readonly
+                  />
+                  <button
+                    v-if="machineGuidInfo?.backup_guid"
+                    class="copy-btn-modern"
+                    @click="copyToClipboard(machineGuidInfo.backup_guid)"
+                    title="复制备份机器码"
+                  >
+                    <img src="/复制.svg" alt="复制" class="copy-icon" width="18" height="18" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 操作按钮区域 -->
+            <div class="machine-guid-actions">
+              <button
+                v-if="!machineGuidInfo?.has_backup"
+                class="action-button backup"
+                @click="handleBackupMachineGuid"
+                :disabled="machineGuidLoading"
+              >
+                <img src="/保存.svg" alt="备份" class="action-icon" width="16" height="16" />
+                <span>备份当前机器码</span>
+              </button>
+              <button
+                class="action-button reset"
+                @click="handleResetMachineGuid"
+                :disabled="machineGuidLoading"
+              >
+                <img src="/重置.svg" alt="重置" class="action-icon" width="16" height="16" />
+                <span>重置机器码</span>
+              </button>
+              <button
+                v-if="machineGuidInfo?.has_backup"
+                class="action-button restore"
+                @click="handleRestoreMachineGuid"
+                :disabled="machineGuidLoading"
+              >
+                <img src="/恢复.svg" alt="恢复" class="action-icon" width="16" height="16" />
+                <span>恢复备份</span>
+              </button>
+            </div>
+            
+            <!-- 警告提示 -->
+            <div class="warning-notice">
+              <img src="/警告.svg" alt="警告" class="warning-icon" width="16" height="16" />
+              <span>修改机器码需要管理员权限。重置前会自动备份当前机器码。</span>
+            </div>
+          </div>
+          <div v-else class="machine-guid-section">
+            <div class="platform-not-supported">
+              机器码管理功能仅支持 Windows 平台
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Verdent.exe 路径管理 -->
+        <div class="verdent-exe-section">
+          <h3 class="section-title">
+            <img src="/文件.svg" alt="文件" class="section-icon" width="20" height="20" />
+            Verdent 客户端路径
+          </h3>
+          
+          <div class="verdent-exe-content">
+            <div class="path-info">
+              <div class="path-label">当前路径:</div>
+              <div class="path-value">
+                {{ verdentExePath || '使用默认路径（自动检测）' }}
+              </div>
+            </div>
+            
+            <div class="path-actions">
+              <button class="btn-secondary" @click="selectVerdentExePath">
+                <img src="/文件夹.svg" alt="选择" class="btn-icon" width="16" height="16" />
+                选择 Verdent.exe
+              </button>
+              <button 
+                v-if="verdentExePath" 
+                class="btn-secondary" 
+                @click="clearVerdentExePath"
+              >
+                <img src="/删除 .svg" alt="清除" class="btn-icon" width="16" height="16" />
+                清除路径
+              </button>
+            </div>
+            
+            <div class="path-hint">
+              <img src="/信息.svg" alt="信息" class="hint-icon" width="14" height="14" />
+              <span>如果 Verdent 客户端未安装在默认位置，请手动选择 Verdent.exe 文件</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
         <div v-if="storageInfo" class="storage-info">
-          <h3>📦 存储信息</h3>
+          <h3>
+            <img src="/存储.svg" alt="存储" class="section-icon" width="20" height="20" />
+            存储信息
+          </h3>
           <p><strong>存储路径:</strong> {{ storageInfo.path }}</p>
           <p><strong>存储项数量:</strong> {{ storageInfo.keys.length }}</p>
-          
+
           <div v-if="storageInfo.keys.length > 0" class="storage-keys">
             <span v-for="key in storageInfo.keys" :key="key" class="storage-key">
               {{ key }}
@@ -607,7 +1036,80 @@ function handleProxyToggle() {
           </div>
           <p v-else style="margin-top: 12px; color: #999">暂无存储数据</p>
         </div>
+
+        <div class="divider"></div>
+
+        <div class="debug-section">
+          <h3>
+            <img src="/调试.svg" alt="调试" class="section-icon" width="20" height="20" />
+            调试工具
+          </h3>
+          <button class="debug-btn" @click="handleDebugSettings">
+            🔍 查看完整配置文件
+          </button>
+          <div v-if="debugSettings" class="debug-output">
+            <pre>{{ debugSettings }}</pre>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.debug-section {
+  margin-top: 24px;
+}
+
+.debug-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.debug-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.debug-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.debug-btn:active {
+  transform: translateY(0);
+}
+
+.debug-output {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.debug-output pre {
+  margin: 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #333;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+</style>

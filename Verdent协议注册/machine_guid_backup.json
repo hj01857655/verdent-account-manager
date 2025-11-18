@@ -1,0 +1,61 @@
+{
+  "original_machine_guid": "8f5cde89-26d4-4b89-a75b-1cf5a7ac57cf",
+  "backup_time": "2025-11-18T21:33:08.111720",
+  "modified_guids": [
+    {
+      "guid": "d79a8f9b-d418-4992-9588-14f57eea458b",
+      "modified_time": "2025-11-18T14:53:11.703989",
+      "previous_guid": "8f5cde89-26d4-4b89-a75b-1cf5a7ac57cf"
+    },
+    {
+      "guid": "1d833cb9-2a93-49d4-9903-76180fc5c2c0",
+      "modified_time": "2025-11-18T14:53:42.944283",
+      "previous_guid": "d79a8f9b-d418-4992-9588-14f57eea458b"
+    },
+    {
+      "guid": "35dbbdde-bbe4-43de-bb78-bf7ab060f23c",
+      "modified_time": "2025-11-18T14:56:09.094686",
+      "previous_guid": "1d833cb9-2a93-49d4-9903-76180fc5c2c0"
+    },
+    {
+      "guid": "dd62e6ca-d194-4545-9386-0c83f8012a41",
+      "modified_time": "2025-11-18T15:00:58.366963",
+      "previous_guid": "35dbbdde-bbe4-43de-bb78-bf7ab060f23c"
+    },
+    {
+      "guid": "9ded3604-088d-48fb-8ee3-9b9d697460c5",
+      "modified_time": "2025-11-18T15:01:48.679147",
+      "previous_guid": "dd62e6ca-d194-4545-9386-0c83f8012a41"
+    },
+    {
+      "guid": "a3c11ba9-6e6b-4ada-b464-6d1978775456",
+      "modified_time": "2025-11-18T15:06:00.967680",
+      "previous_guid": "9ded3604-088d-48fb-8ee3-9b9d697460c5"
+    },
+    {
+      "guid": "b1996810-bd36-4de1-a9e0-363840c07db2",
+      "modified_time": "2025-11-18T15:07:46.759996",
+      "previous_guid": "a3c11ba9-6e6b-4ada-b464-6d1978775456"
+    },
+    {
+      "guid": "3f4c38fc-1861-416e-aa84-98354d8fd314",
+      "modified_time": "2025-11-18T16:42:47.126327",
+      "previous_guid": "b1996810-bd36-4de1-a9e0-363840c07db2"
+    },
+    {
+      "guid": "db56c5c8-6a8f-4499-98d8-3d1bb0ab2797",
+      "modified_time": "2025-11-18T16:47:07.912306",
+      "previous_guid": "3f4c38fc-1861-416e-aa84-98354d8fd314"
+    },
+    {
+      "guid": "3a1425b6-fd7f-4822-bccf-0fd9e86b734d",
+      "modified_time": "2025-11-18T16:47:45.117478",
+      "previous_guid": "db56c5c8-6a8f-4499-98d8-3d1bb0ab2797"
+    },
+    {
+      "guid": "0c004e98-6613-4600-bbf8-28ed34ef2e41",
+      "modified_time": "2025-11-18T21:33:08.113713",
+      "previous_guid": "F726912F-AE52-45FE-8650-3C4E7C5A1030"
+    }
+  ]
+}

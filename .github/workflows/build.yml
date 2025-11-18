@@ -224,9 +224,24 @@ jobs:
             Verdent_account_manger/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
           if-no-files-found: error
 
+  # 上传 VSCode 插件
+  upload-vscode-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 上传 VSCode 插件
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: |
+            "Vs code拓展/VerdentAi- Seamless number change + Removal of account restrictions.vsix"
+          if-no-files-found: error
+
   # 创建 Release（仅在推送标签时）
   release:
-    needs: build
+    needs: [build, upload-vscode-extension]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     permissions:
@@ -262,6 +277,9 @@ jobs:
           find artifacts -name "*.deb" -type f -exec cp {} release_files/ \;
           find artifacts -name "*.AppImage" -type f -exec cp {} release_files/ \;
           
+          # 复制 VSCode 插件
+          find artifacts -name "*.vsix" -type f -exec cp {} release_files/VerdentAI-Enhanced.vsix \;
+          
           # 显示最终文件列表
           echo "=== Release files ==="
           ls -la release_files/
@@ -283,11 +301,19 @@ jobs:
           - **DEB 包**：适用于 Debian/Ubuntu 系统
           - **AppImage**：通用 Linux 包，无需安装
           
+          ### VSCode 插件
+          - **VerdentAI-Enhanced.vsix**：增强版 VSCode 插件
+            - 无缝账号切换功能
+            - 移除账号限制
+            - 支持多账号管理
+            - 安装方法：在 VSCode 中按 Ctrl+Shift+P，输入 "Install from VSIX"，选择下载的 .vsix 文件
+          
           ## ✨ 主要功能
           - 批量账号管理
           - 自动注册功能（Windows）
           - 一键登录编辑器
           - 实时账号状态监控
+          - VSCode 插件增强功能
           
           ## 📝 使用说明
           请参考 [快速入门指南](https://github.com/chaogei/Verdent/blob/main/QUICK_START.md)

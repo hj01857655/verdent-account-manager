@@ -265,7 +265,6 @@ class VerdentAutoRegister:
         
         #无痕模式
         options.set_argument('--incognito')
-        options.set_argument('--disable-gpu')
         options.set_argument('--no-sandbox')  # Linux兼容性
         options.set_argument('--disable-dev-shm-usage')  # 解决共享内存问题
         
