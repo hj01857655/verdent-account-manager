@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   clearScreen: false,
   server: {
-    port: 5173,
+    port: 53252,
     strictPort: false,  // 如果端口被占用，自动尝试下一个可用端口
     host: 'localhost',
   },

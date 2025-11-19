@@ -24,7 +24,7 @@ echo.
 echo [2/2] Starting development server...
 echo.
 echo Tips: 
-echo   - Frontend will start at http://localhost:5173
+echo   - Frontend will start at http://localhost:53252
 echo   - Tauri window will open automatically
 echo   - Vue code changes will hot reload
 echo   - Rust code changes require restart

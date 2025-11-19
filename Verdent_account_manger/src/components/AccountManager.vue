@@ -360,15 +360,12 @@ async function handleBatchDelete() {
       try {
         for (const id of ids) {
           try {
-            const result = await invoke<{ success: boolean; error?: string }>('delete_account', {
-              accountId: id
+            await invoke('delete_account', {
+              id: id
             })
-            if (result.success) {
-              successCount++
-            } else {
-              failCount++
-            }
-          } catch {
+            successCount++
+          } catch (error) {
+            console.error(`删除账户 ${id} 失败:`, error)
             failCount++
           }
         }

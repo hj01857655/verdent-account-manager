@@ -22,7 +22,7 @@ echo
 echo "[2/2] 启动开发服务器..."
 echo
 echo "提示: "
-echo "  - 前端会在 http://localhost:5173 启动"
+echo "  - 前端会在 http://localhost:53252 启动"
 echo "  - Tauri窗口会自动打开"
 echo "  - 修改Vue代码会自动热重载"
 echo "  - 修改Rust代码需要重启"
