@@ -211,6 +211,14 @@ pub struct LoginToVSCodeResponse {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResetResponse {
+    pub success: bool,
+    pub deleted_count: usize,
+    pub deleted_keys: Vec<String>,
+    pub error: Option<String>,
+}
+
 #[tauri::command]
 pub async fn auto_register_accounts(
     app_handle: tauri::AppHandle,
@@ -720,31 +728,380 @@ pub async fn login_with_token(request: LoginRequest) -> Result<LoginResponse, St
 }
 
 #[tauri::command]
-pub async fn reset_device_identity() -> Result<bool, String> {
+pub async fn reset_device_identity(generate_new_device_id: bool, selected_editors: Option<Vec<String>>) -> Result<ResetResponse, String> {
     use crate::storage::StorageManager;
-    let storage = StorageManager::new().map_err(|e| e.to_string())?;
-    storage.clear().map_err(|e| e.to_string())?;
-    Ok(true)
+    use crate::vscode_storage::VSCodeStorageManager;
+    use crate::editor_config::EditorType;
+
+    println!("[*] 开始重置设备身份...");
+    println!("[*] 生成新设备ID: {}", generate_new_device_id);
+
+    let mut deleted_keys = Vec::new();
+    let mut deleted_count = 0;
+
+    // 1. 清除应用存储（Verdent相关的认证信息）
+    println!("[*] 步骤 1: 清理 Verdent 认证信息...");
+    let storage = StorageManager::new().map_err(|e| {
+        eprintln!("[×] 创建 StorageManager 失败: {}", e);
+        e.to_string()
+    })?;
+
+    // 获取当前存储的所有键
+    let keys_before = storage.list_keys().map_err(|e| {
+        eprintln!("[×] 获取存储键列表失败: {}", e);
+        e.to_string()
+    })?;
+
+    deleted_count += keys_before.len();
+    deleted_keys.extend(keys_before.clone());
+
+    // 清除所有存储
+    storage.clear().map_err(|e| {
+        eprintln!("[×] 清除存储失败: {}", e);
+        e.to_string()
+    })?;
+
+    println!("[✓] Verdent 认证信息已清理: {} 项", keys_before.len());
+
+    // 2. 重置编辑器设备标识
+    if generate_new_device_id {
+        println!("[*] 步骤 2: 重置编辑器设备标识...");
+        
+        // 解析选中的编辑器列表
+        let editors_to_reset = if let Some(ref editor_names) = selected_editors {
+            let mut editors = Vec::new();
+            for name in editor_names {
+                if let Some(editor) = EditorType::from_string(&name) {
+                    editors.push(editor);
+                }
+            }
+            editors
+        } else {
+            // 默认只重置 VS Code
+            vec![EditorType::VSCode]
+        };
+        
+        // 重置每个编辑器的设备标识
+        for editor in &editors_to_reset {
+            println!("[*] 重置 {} 设备标识...", editor.display_name());
+            
+            // 使用 VSCodeStorageManager 处理所有编辑器
+            match VSCodeStorageManager::new_with_editor(editor.folder_name()) {
+                Ok(storage_manager) => {
+                    match storage_manager.reset_telemetry_ids() {
+                        Ok((sqm_id, device_id, machine_id)) => {
+                            deleted_keys.push(format!("{} telemetry.sqmId (重置为: {})", editor.display_name(), sqm_id));
+                            deleted_keys.push(format!("{} telemetry.devDeviceId (重置为: {})", editor.display_name(), device_id));
+                            deleted_keys.push(format!("{} telemetry.machineId (重置为: {})", editor.display_name(), machine_id));
+                            deleted_count += 3;
+                            println!("[✓] {} 设备标识已重置", editor.display_name());
+                            println!("    新 sqmId: {}", sqm_id);
+                            println!("    新 deviceId: {}", device_id);
+                            println!("    新 machineId: {}", machine_id);
+                        }
+                        Err(e) => {
+                            eprintln!("[!] 重置 {} 设备标识失败: {}", editor.display_name(), e);
+                            println!("[!] 跳过 {} 设备标识重置", editor.display_name());
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[!] 创建 {} StorageManager 失败: {}", editor.display_name(), e);
+                    println!("[!] 跳过 {} 设备标识重置", editor.display_name());
+                }
+            }
+        }
+    } else {
+        println!("[*] 跳过编辑器设备标识重置（根据参数设置）");
+    }
+
+    // 3. 重置编辑器 state.vscdb 中的 deviceId
+    if generate_new_device_id {
+        println!("[*] 步骤 3: 重置编辑器 state.vscdb 中的 deviceId...");
+        use crate::cleanup_utils::reset_editors_device_id;
+        
+        // 使用与步骤2相同的编辑器列表
+        let editors_for_db = if let Some(ref editor_names) = selected_editors {
+            let mut editors = Vec::new();
+            for name in editor_names {
+                if let Some(editor) = EditorType::from_string(&name) {
+                    editors.push(editor);
+                }
+            }
+            editors
+        } else {
+            vec![EditorType::VSCode]
+        };
+        
+        let results = reset_editors_device_id(&editors_for_db, true);
+        for (editor_name, result) in results {
+            match result {
+                Ok(new_device_id) => {
+                    deleted_keys.push(format!("{} state.vscdb deviceId (重置为: {})", editor_name, new_device_id));
+                    deleted_count += 1;
+                    println!("[✓] {} state.vscdb deviceId 已重置: {}", editor_name, new_device_id);
+                }
+                Err(e) => {
+                    eprintln!("[!] 重置 {} state.vscdb deviceId 失败: {}", editor_name, e);
+                    println!("[!] 跳过 {} state.vscdb deviceId 重置", editor_name);
+                }
+            }
+        }
+    } else {
+        println!("[*] 跳过编辑器 state.vscdb deviceId 重置（根据参数设置）");
+    }
+
+    // 4. 重置机器码（仅 Windows）
+    if generate_new_device_id && cfg!(target_os = "windows") {
+        println!("[*] 步骤 4: 重置机器码...");
+        use crate::machine_guid::MachineGuidManager;
+        
+        match MachineGuidManager::new() {
+            Ok(manager) => {
+                match manager.reset_to_new_guid() {
+                    Ok(new_guid) => {
+                        deleted_keys.push(format!("Windows MachineGuid (重置为: {})", new_guid));
+                        deleted_count += 1;
+                        println!("[✓] 机器码已重置: {}", new_guid);
+                    }
+                    Err(e) => {
+                        eprintln!("[!] 重置机器码失败: {}", e);
+                        println!("[!] 提示: 可能需要管理员权限");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[!] 创建 MachineGuidManager 失败: {}", e);
+                println!("[!] 跳过机器码重置");
+            }
+        }
+    } else if generate_new_device_id && !cfg!(target_os = "windows") {
+        println!("[*] 跳过机器码重置（非 Windows 系统）");
+    }
+
+    println!("[✓] 设备身份重置完成");
+    println!("[✓] 处理了 {} 个存储项", deleted_count);
+
+    Ok(ResetResponse {
+        success: true,
+        deleted_count,
+        deleted_keys,
+        error: None,
+    })
 }
 
 #[tauri::command]
-pub async fn reset_all_storage() -> Result<bool, String> {
+pub async fn reset_all_storage(generate_new_device_id: bool, selected_editors: Option<Vec<String>>) -> Result<ResetResponse, String> {
     use crate::storage::StorageManager;
     use crate::vscode_storage::VSCodeStorageManager;
+    use crate::editor_config::EditorType;
 
-    let storage = StorageManager::new().map_err(|e| e.to_string())?;
-    storage.clear().map_err(|e| e.to_string())?;
+    println!("[*] 开始完全清理所有存储...");
+    println!("[*] 生成新设备ID: {}", generate_new_device_id);
 
-    let vscode_storage = VSCodeStorageManager::new().map_err(|e| e.to_string())?;
-    vscode_storage.clear().map_err(|e| e.to_string())?;
+    let mut deleted_keys = Vec::new();
+    let mut deleted_count = 0;
 
-    let account_mgr = AccountManager::new().map_err(|e| e.to_string())?;
-    let accounts = account_mgr.get_all_accounts().map_err(|e| e.to_string())?;
-    for account in accounts {
-        let _ = account_mgr.delete_account(&account.id);
+    // 1. 清除应用存储
+    println!("[*] 步骤 1: 清除应用存储...");
+    let storage = StorageManager::new().map_err(|e| {
+        eprintln!("[×] 创建 StorageManager 失败: {}", e);
+        e.to_string()
+    })?;
+
+    let keys_before = storage.list_keys().map_err(|e| {
+        eprintln!("[×] 获取存储键列表失败: {}", e);
+        e.to_string()
+    })?;
+
+    deleted_count += keys_before.len();
+    deleted_keys.extend(keys_before.clone());
+
+    storage.clear().map_err(|e| {
+        eprintln!("[×] 清除应用存储失败: {}", e);
+        e.to_string()
+    })?;
+
+    println!("[✓] 应用存储已清除: {} 项", keys_before.len());
+
+    // 2. 重置编辑器设备标识
+    if generate_new_device_id {
+        println!("[*] 步骤 2: 重置编辑器设备标识...");
+        
+        // 解析选中的编辑器列表
+        let editors_to_reset = if let Some(editor_names) = selected_editors.clone() {
+            let mut editors = Vec::new();
+            for name in editor_names {
+                if let Some(editor) = EditorType::from_string(&name) {
+                    editors.push(editor);
+                }
+            }
+            editors
+        } else {
+            // 默认只重置 VS Code
+            vec![EditorType::VSCode]
+        };
+        
+        // 重置每个编辑器的设备标识
+        for editor in &editors_to_reset {
+            println!("[*] 重置 {} 设备标识...", editor.display_name());
+            
+            // 使用 VSCodeStorageManager 处理所有编辑器
+            match VSCodeStorageManager::new_with_editor(editor.folder_name()) {
+                Ok(storage_manager) => {
+                    match storage_manager.reset_telemetry_ids() {
+                        Ok((sqm_id, device_id, machine_id)) => {
+                            deleted_keys.push(format!("{} telemetry.sqmId (重置为: {})", editor.display_name(), sqm_id));
+                            deleted_keys.push(format!("{} telemetry.devDeviceId (重置为: {})", editor.display_name(), device_id));
+                            deleted_keys.push(format!("{} telemetry.machineId (重置为: {})", editor.display_name(), machine_id));
+                            deleted_count += 3;
+                            println!("[✓] {} 设备标识已重置", editor.display_name());
+                            println!("    新 sqmId: {}", sqm_id);
+                            println!("    新 deviceId: {}", device_id);
+                            println!("    新 machineId: {}", machine_id);
+                        }
+                        Err(e) => {
+                            eprintln!("[!] 重置 {} 设备标识失败: {}", editor.display_name(), e);
+                            println!("[!] 跳过 {} 设备标识重置", editor.display_name());
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[!] 创建 {} StorageManager 失败: {}", editor.display_name(), e);
+                    println!("[!] 跳过 {} 设备标识重置", editor.display_name());
+                }
+            }
+        }
+    } else {
+        println!("[*] 跳过编辑器设备标识重置（根据参数设置）");
     }
 
-    Ok(true)
+    // 3. 删除所有账户
+    println!("[*] 步骤 3: 删除所有账户...");
+    match AccountManager::new() {
+        Ok(account_mgr) => {
+            match account_mgr.get_all_accounts() {
+                Ok(accounts) => {
+                    let account_count = accounts.len();
+                    for account in accounts {
+                        if let Err(e) = account_mgr.delete_account(&account.id) {
+                            eprintln!("[!] 删除账户 {} 失败: {}", account.email, e);
+                        } else {
+                            deleted_keys.push(format!("account:{}", account.email));
+                        }
+                    }
+                    deleted_count += account_count;
+                    println!("[✓] 已删除 {} 个账户", account_count);
+                }
+                Err(e) => {
+                    eprintln!("[!] 获取账户列表失败: {}", e);
+                    println!("[!] 跳过账户删除");
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[!] 创建 AccountManager 失败: {}", e);
+            println!("[!] 跳过账户删除");
+        }
+    }
+
+    // 4. 清空 Verdent 相关文件夹内容
+    println!("[*] 步骤 4: 清空 Verdent 相关文件夹...");
+    {
+        // 解析选中的编辑器列表（如果没有提供，默认清理所有编辑器）
+        let editors_to_clean = if let Some(ref editor_names) = selected_editors {
+            let mut editors = Vec::new();
+            for name in editor_names {
+                if let Some(editor) = EditorType::from_string(&name) {
+                    editors.push(editor);
+                }
+            }
+            editors
+        } else {
+            // 默认只清理 VS Code
+            vec![EditorType::VSCode]
+        };
+        
+        use crate::cleanup_utils::clear_verdent_directories_for_editors;
+        let (dir_count, cleaned_paths) = clear_verdent_directories_for_editors(&editors_to_clean);
+        deleted_count += dir_count;
+        deleted_keys.extend(cleaned_paths);
+        println!("[✓] 已清理 {} 个文件/文件夹", dir_count);
+    }
+
+    // 5. 重置编辑器 state.vscdb 中的 deviceId
+    if generate_new_device_id {
+        println!("[*] 步骤 5: 重置编辑器 state.vscdb 中的 deviceId...");
+        use crate::cleanup_utils::reset_editors_device_id;
+        
+        // 使用与步骤2相同的编辑器列表
+        let editors_for_db = if let Some(ref editor_names) = selected_editors {
+            let mut editors = Vec::new();
+            for name in editor_names {
+                if let Some(editor) = EditorType::from_string(&name) {
+                    editors.push(editor);
+                }
+            }
+            editors
+        } else {
+            vec![EditorType::VSCode]
+        };
+        
+        let results = reset_editors_device_id(&editors_for_db, true);
+        for (editor_name, result) in results {
+            match result {
+                Ok(new_device_id) => {
+                    deleted_keys.push(format!("{} state.vscdb deviceId (重置为: {})", editor_name, new_device_id));
+                    deleted_count += 1;
+                    println!("[✓] {} state.vscdb deviceId 已重置: {}", editor_name, new_device_id);
+                }
+                Err(e) => {
+                    eprintln!("[!] 重置 {} state.vscdb deviceId 失败: {}", editor_name, e);
+                    println!("[!] 跳过 {} state.vscdb deviceId 重置", editor_name);
+                }
+            }
+        }
+    } else {
+        println!("[*] 跳过编辑器 state.vscdb deviceId 重置（根据参数设置）");
+    }
+
+    // 6. 重置机器码（仅 Windows）
+    if generate_new_device_id && cfg!(target_os = "windows") {
+        println!("[*] 步骤 6: 重置机器码...");
+        use crate::machine_guid::MachineGuidManager;
+        
+        match MachineGuidManager::new() {
+            Ok(manager) => {
+                match manager.reset_to_new_guid() {
+                    Ok(new_guid) => {
+                        deleted_keys.push(format!("Windows MachineGuid (重置为: {})", new_guid));
+                        deleted_count += 1;
+                        println!("[✓] 机器码已重置: {}", new_guid);
+                    }
+                    Err(e) => {
+                        eprintln!("[!] 重置机器码失败: {}", e);
+                        println!("[!] 提示: 可能需要管理员权限");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[!] 创建 MachineGuidManager 失败: {}", e);
+                println!("[!] 跳过机器码重置");
+            }
+        }
+    } else if generate_new_device_id && !cfg!(target_os = "windows") {
+        println!("[*] 跳过机器码重置（非 Windows 系统）");
+    }
+
+    println!("[✓] 完全清理完成");
+    println!("[✓] 总共清除了 {} 个存储项", deleted_count);
+
+    Ok(ResetResponse {
+        success: true,
+        deleted_count,
+        deleted_keys,
+        error: None,
+    })
 }
 
 #[tauri::command]
@@ -2743,4 +3100,23 @@ pub async fn delete_machine_guid_backup() -> Result<(), String> {
 
     let manager = MachineGuidManager::new()?;
     manager.delete_backup()
+}
+
+/// 获取所有支持的编辑器信息
+#[tauri::command]
+pub async fn get_all_editors_info() -> Result<Vec<crate::editor_config::EditorInfo>, String> {
+    use crate::editor_config::get_all_editors_info;
+    
+    Ok(get_all_editors_info())
+}
+
+/// 获取已安装的编辑器列表
+#[tauri::command]
+pub async fn get_installed_editors() -> Result<Vec<String>, String> {
+    use crate::editor_config::get_installed_editors;
+    
+    Ok(get_installed_editors()
+        .iter()
+        .map(|e| e.display_name().to_string())
+        .collect())
 }

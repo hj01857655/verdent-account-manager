@@ -19,6 +19,10 @@ pub struct VSCodeStorageManager {
 
 impl VSCodeStorageManager {
     pub fn new() -> Result<Self, std::io::Error> {
+        Self::new_with_editor("Code")
+    }
+    
+    pub fn new_with_editor(editor_folder: &str) -> Result<Self, std::io::Error> {
         let (storage_path, extensions_path) = if cfg!(target_os = "windows") {
             let appdata = std::env::var("APPDATA")
                 .map_err(|_| std::io::Error::new(std::io::ErrorKind::NotFound, "APPDATA not found"))?;
@@ -26,13 +30,13 @@ impl VSCodeStorageManager {
                 .map_err(|_| std::io::Error::new(std::io::ErrorKind::NotFound, "USERPROFILE not found"))?;
             
             let storage = PathBuf::from(appdata)
-                .join("Code")
+                .join(editor_folder)
                 .join("User")
                 .join("globalStorage")
                 .join("storage.json");
             
             let extensions = PathBuf::from(userprofile)
-                .join(".vscode")
+                .join(format!(".{}", editor_folder.to_lowercase()))
                 .join("extensions");
             
             (storage, extensions)
@@ -43,13 +47,13 @@ impl VSCodeStorageManager {
             let storage = home
                 .join("Library")
                 .join("Application Support")
-                .join("Code")
+                .join(editor_folder)
                 .join("User")
                 .join("globalStorage")
                 .join("storage.json");
             
             let extensions = home
-                .join(".vscode")
+                .join(format!(".{}", editor_folder.to_lowercase()))
                 .join("extensions");
             
             (storage, extensions)
@@ -59,13 +63,13 @@ impl VSCodeStorageManager {
             
             let storage = home
                 .join(".config")
-                .join("Code")
+                .join(editor_folder)
                 .join("User")
                 .join("globalStorage")
                 .join("storage.json");
             
             let extensions = home
-                .join(".vscode")
+                .join(format!(".{}", editor_folder.to_lowercase()))
                 .join("extensions");
             
             (storage, extensions)
@@ -126,7 +130,7 @@ impl VSCodeStorageManager {
 
     pub fn generate_sqm_id() -> String {
         let uuid = Uuid::new_v4();
-        format!("{{{}}}", uuid.to_string().to_uppercase())
+        uuid.to_string().to_uppercase()
     }
 
     pub fn generate_device_id() -> String {

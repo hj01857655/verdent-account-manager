@@ -1,7 +1,9 @@
 mod account_manager;
 mod admin_helper;
 mod api;
+mod cleanup_utils;
 mod commands;
+mod editor_config;
 mod errors;
 mod jwt_utils;
 mod machine_guid;
@@ -116,6 +118,8 @@ pub fn run() {
             setup_admin_autostart,
             remove_admin_autostart,
             debug_print_settings,
+            get_all_editors_info,
+            get_installed_editors,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

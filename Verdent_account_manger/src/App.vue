@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
-import { open, confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
+import { open, confirm as tauriConfirm, message as tauriMessage } from '@tauri-apps/plugin-dialog'
 import AccountManager from './components/AccountManager.vue'
 import Toast from './components/Toast.vue'
 
@@ -48,6 +48,14 @@ interface MachineGuidInfo {
   platform: string
 }
 
+interface EditorInfo {
+  editor_type: string
+  display_name: string
+  is_installed: boolean
+  storage_path: string | null
+  state_db_path: string | null
+}
+
 const activeTab = ref<'login' | 'reset' | 'accounts'>('accounts')
 const debugSettings = ref('')  // 调试：配置文件内容
 const token = ref('')
@@ -72,6 +80,10 @@ const machineGuidLoading = ref(false)
 // Verdent.exe 路径管理
 const verdentExePath = ref<string | null>(null)
 
+// 编辑器选择相关状态
+const availableEditors = ref<EditorInfo[]>([])
+const selectedEditors = ref<string[]>(['VSCode'])
+
 // Toast 相关状态
 const showToast = ref(false)
 const toastMessage = ref('')
@@ -83,6 +95,7 @@ onMounted(async () => {
   await loadProxySettings()
   await loadMachineGuidInfo()
   await loadVerdentExePath()
+  await loadAvailableEditors()
   
   // 检查管理员权限（仅Windows）
   try {
@@ -239,7 +252,6 @@ async function handleLogin() {
   }
 
   loading.value = true
-  message.value = null
 
   try {
     const request: LoginRequest = {
@@ -252,7 +264,7 @@ async function handleLogin() {
 
     if (response.success) {
       showMessage('success', `登录成功! 访问令牌: ${response.access_token?.substring(0, 20)}...`)
-      
+
       if (openVscode.value && response.callback_url) {
         try {
           await invoke('open_vscode_callback', { callbackUrl: response.callback_url })
@@ -267,49 +279,69 @@ async function handleLogin() {
       showMessage('error', response.error || '登录失败')
     }
   } catch (error: any) {
+    console.error('登录失败:', error)
     showMessage('error', `登录失败: ${error}`)
   } finally {
     loading.value = false
   }
 }
 
-async function handleOpenFolder() {
+async function openStorageFolder() {
   try {
     const path = await invoke('open_storage_folder')
     console.log('存储位置已打开:', path)
   } catch (error) {
     console.error('打开存储文件夹失败:', error)
-    alert(`打开存储文件夹失败: ${error}`)
+    await tauriMessage(`打开存储文件夹失败: ${error}`, {
+      title: '❌ 错误',
+      okLabel: '确定',
+      kind: 'error'
+    })
   }
 }
 
 async function handleResetDevice() {
-  if (!confirm('🔄 重置设备身份标识 - 清理多账号检测相关数据\n\n此操作将:\n1. 删除所有账户认证信息\n2. 清除用户信息缓存\n3. 重置设备标识(可选)\n4. 清除任务历史记录\n\n这将使系统恢复到"全新设备首次登录"状态。\n\n是否继续?')) {
+  // 使用 Tauri 的确认对话框
+  const confirmed = await tauriConfirm('此操作将:\n1. 删除所有账户认证信息\n2. 清除用户信息缓存\n3. 重置设备标识(可选)\n4. 清除任务历史记录\n\n这将使系统恢复到"全新设备首次登录"状态。\n\n是否继续?', {
+    title: '🔄 重置设备身份标识 - 清理多账号检测相关数据',
+    okLabel: '确定',
+    cancelLabel: '取消',
+    kind: 'warning'
+  })
+
+  if (!confirmed) {
     return
   }
 
   loading.value = true
-  message.value = null
 
   try {
     const response = await invoke<ResetResponse>('reset_device_identity', {
-      generateNewDeviceId: generateNewDeviceId.value
+      generateNewDeviceId: generateNewDeviceId.value,
+      selectedEditors: selectedEditors.value
     })
 
     if (response.success) {
-      let msg = `✅ 设备身份已重置!\n\n清除了 ${response.deleted_count} 个存储项:`
+      let msg = `清除了 ${response.deleted_count} 个存储项:`
       if (response.deleted_keys.length > 0) {
         msg += '\n' + response.deleted_keys.map(k => `• ${k}`).join('\n')
       }
       msg += '\n\n💡 提示:\n- 所有账户关联信息已清除\n- 系统状态已恢复到"全新设备首次登录"\n- 现在可以使用新账号登录而不会被检测到多账号关联'
+
+      // 使用 Tauri 的消息对话框
+      await tauriMessage(msg, {
+        title: '✅ 设备身份已重置!',
+        okLabel: '确定',
+        kind: 'info'
+      })
       
-      alert(msg)
       await loadStorageInfo()
       await loadVSCodeIds()
     } else {
       showMessage('error', response.error || '重置失败')
     }
   } catch (error: any) {
+    console.error('重置设备身份失败:', error)
     showMessage('error', `重置失败: ${error}`)
   } finally {
     loading.value = false
@@ -329,9 +361,8 @@ async function handleResetAll() {
     'workspaceState_thinkLevel',
     'workspaceState_selectModel'
   ]
-  
-  let confirmMsg = '⚠️ 警告: 完全清理模式\n\n'
-  confirmMsg += '此操作将删除所有 Verdent AI 扩展的本地存储数据，包括:\n'
+
+  let confirmMsg = '此操作将删除所有 Verdent AI 扩展的本地存储数据，包括:\n'
   confirmMsg += '• 所有认证信息 (tokens, API keys)\n'
   confirmMsg += '• 所有用户信息 (账户、订阅状态)\n'
   confirmMsg += '• 所有配置信息 (API 提供商、任务历史)\n'
@@ -341,39 +372,61 @@ async function handleResetAll() {
     confirmMsg += `${i + 1}. ${key}\n`
   })
   confirmMsg += '\n确定要继续吗?'
-  
-  if (!confirm(confirmMsg)) {
+
+  // 第一次确认
+  const firstConfirm = await tauriConfirm(confirmMsg, {
+    title: '⚠️ 警告: 完全清理模式',
+    okLabel: '继续',
+    cancelLabel: '取消',
+    kind: 'warning'
+  })
+
+  if (!firstConfirm) {
     return
   }
 
-  const confirmText = prompt('⚠️ 确认要删除所有数据吗? (输入 "YES" 确认):')
-  if (confirmText !== 'YES') {
+  // 第二次确认 - 使用简单的确认对话框
+  const secondConfirm = await tauriConfirm('请再次确认：您真的要删除所有数据吗？\n\n此操作不可撤销！', {
+    title: '⚠️ 最终确认',
+    okLabel: '确认删除',
+    cancelLabel: '取消',
+    kind: 'warning'
+  })
+
+  if (!secondConfirm) {
     showMessage('info', '❌ 操作已取消')
     return
   }
 
   loading.value = true
-  message.value = null
 
   try {
     const response = await invoke<ResetResponse>('reset_all_storage', {
-      generateNewDeviceId: generateNewDeviceId.value
+      generateNewDeviceId: generateNewDeviceId.value,
+      selectedEditors: selectedEditors.value
     })
 
     if (response.success) {
-      let msg = `✅ 完全清理完成!\n\n删除了 ${response.deleted_count} 个存储项:`
+      let msg = `删除了 ${response.deleted_count} 个存储项:`
       if (response.deleted_keys.length > 0) {
         msg += '\n' + response.deleted_keys.map(k => `• ${k}`).join('\n')
       }
       msg += '\n\n💡 提示:\n- 所有 Verdent AI 扩展数据已清除\n- 本地存储已恢复到"从未安装"状态\n- 所有用户偏好设置已重置\n- 现在可以重新配置或使用新账号登录'
+
+      // 使用 Tauri 的消息对话框
+      await tauriMessage(msg, {
+        title: '✅ 完全清理完成!',
+        okLabel: '确定',
+        kind: 'info'
+      })
       
-      alert(msg)
       await loadStorageInfo()
       await loadVSCodeIds()
     } else {
       showMessage('error', response.error || '清除失败')
     }
   } catch (error: any) {
+    console.error('完全清理失败:', error)
     showMessage('error', `清除失败: ${error}`)
   } finally {
     loading.value = false
@@ -652,6 +705,26 @@ async function copyToClipboard(text: string) {
     showMessage('error', '复制失败')
   }
 }
+
+async function loadAvailableEditors() {
+  try {
+    const editors = await invoke<EditorInfo[]>('get_all_editors_info')
+    availableEditors.value = editors
+    console.log('可用编辑器:', editors)
+  } catch (error) {
+    console.error('获取编辑器信息失败:', error)
+    // 如果失败，设置默认编辑器
+    availableEditors.value = [
+      {
+        editor_type: 'VSCode',
+        display_name: 'VS Code',
+        is_installed: true,
+        storage_path: null,
+        state_db_path: null
+      }
+    ]
+  }
+}
 </script>
 
 <template>
@@ -704,7 +777,7 @@ async function copyToClipboard(text: string) {
               <input :value="accountsStoragePath || '未知'" type="text" class="info-input" readonly style="flex: 1;" />
               <button 
                 class="open-folder-btn" 
-                @click="handleOpenFolder"
+                @click="openStorageFolder"
                 title="打开存储文件夹"
               >
                 <img src="/文件夹.svg" alt="" class="folder-icon" />
@@ -851,6 +924,27 @@ async function copyToClipboard(text: string) {
             <li><strong>完全清理:</strong> 清理所有数据，包括用户偏好、工作区配置等</li>
             <li>切换账号前建议使用"重置设备身份"避免多账号检测</li>
           </ul>
+        </div>
+
+        <!-- 编辑器选择 -->
+        <div class="editor-selection-section">
+          <h4>选择要清理的编辑器</h4>
+          <div class="editor-checkboxes">
+            <div v-for="editor in availableEditors" :key="editor.editor_type" class="editor-checkbox-item">
+              <input
+                :id="`editor-${editor.editor_type}`"
+                v-model="selectedEditors"
+                type="checkbox"
+                :value="editor.editor_type"
+                :disabled="!editor.is_installed"
+              />
+              <label :for="`editor-${editor.editor_type}`" class="editor-label">
+                {{ editor.display_name }}
+                <span v-if="!editor.is_installed" class="not-installed">(未安装)</span>
+                <span v-else class="installed">✓</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <div class="form-group checkbox-group">
@@ -1057,6 +1151,68 @@ async function copyToClipboard(text: string) {
 </template>
 
 <style scoped>
+.editor-selection-section {
+  margin: 20px 0;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.editor-selection-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #e0e0e0;
+  font-weight: 500;
+}
+
+.editor-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.editor-checkbox-item {
+  display: flex;
+  align-items: center;
+}
+
+.editor-checkbox-item input[type="checkbox"] {
+  margin-right: 8px;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.editor-checkbox-item input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editor-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.editor-label .installed {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.editor-label .not-installed {
+  color: #999;
+  font-size: 12px;
+}
+
+input[type="checkbox"]:disabled + .editor-label {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .debug-section {
   margin-top: 24px;
 }

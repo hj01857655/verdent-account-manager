@@ -9,7 +9,6 @@ lerna-debug.log*
 
 # Node modules
 node_modules
-dist
 dist-ssr
 *.local
 
@@ -41,7 +40,6 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -81,7 +79,6 @@ coverage/
 
 # Build outputs
 /build/
-/dist/
 *.msi
 *.exe
 *.dmg
